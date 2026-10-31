@@ -90,6 +90,25 @@ interface Strings {
     val update: String
 
     val online: String
+
+    val today: String
+    val tomorrow: String
+    val yesterday: String
+    val lecture: String
+    val practice: String
+    val laboratory: String
+    val lessonDefault: String
+    val pairLabel: String
+    val longBreak: String
+    val windowBreak: String
+    val disciplineFallback: String
+    val conferenceLinkPlaceholder: String
+    val untilTimePrefix: String
+    val minutesShort: String
+
+    fun formatPairsCount(count: Int): String
+    fun formatWindowWithPairs(count: Int): String
+    fun translateDiscipline(name: String?): String
 }
 
 object UkrainianStrings : Strings {
@@ -153,10 +172,49 @@ object UkrainianStrings : Strings {
     override val update = "Оновити"
 
     override val online = "ONLINE"
+
+    override val today = "Сьогодні"
+    override val tomorrow = "Завтра"
+    override val yesterday = "Вчора"
+    override val lecture = "Лекція"
+    override val practice = "Практика"
+    override val laboratory = "Лабораторна"
+    override val lessonDefault = "Заняття"
+    override val pairLabel = "пара"
+    override val longBreak = "Велика перерва"
+    override val windowBreak = "Вікно"
+    override val disciplineFallback = "Дисципліна"
+    override val conferenceLinkPlaceholder = "Посилання на онлайн-пару (Zoom / Meet)"
+    override val untilTimePrefix = "до"
+    override val minutesShort = "хв"
+
+    override fun formatPairsCount(count: Int): String {
+        val rem100 = count % 100
+        val rem10 = count % 10
+        val word = when {
+            rem100 in 11..14 -> "пар"
+            rem10 == 1 -> "пара"
+            rem10 in 2..4 -> "пари"
+            else -> "пар"
+        }
+        return "$count $word"
+    }
+
+    override fun formatWindowWithPairs(count: Int): String {
+        return when {
+            count == 1 -> "Вікно (1 пара)"
+            count in 2..4 -> "Вікно ($count пари)"
+            count >= 5 -> "Вікно ($count пар)"
+            else -> "Вікно між парами"
+        }
+    }
+
+    override fun translateDiscipline(name: String?): String =
+        DisciplineTranslator.translateDiscipline(name, Language.UKRAINIAN)
 }
 
 object EnglishStrings : Strings {
-    override val appTitle = "Розклад+"
+    override val appTitle = "Rozklad+"
     override val back = "Back"
     override val settings = "Settings"
     override val loading = "Loading..."
@@ -172,8 +230,8 @@ object EnglishStrings : Strings {
     override val schedule = "Class Schedule"
     override val callSchedule = "Bell Schedule"
     override val noClasses = "No classes"
-    override val lessons = "lessons"
-    override val course = "course"
+    override val lessons = "classes"
+    override val course = "year"
 
     override val monday = "Monday"
     override val tuesday = "Tuesday"
@@ -216,4 +274,34 @@ object EnglishStrings : Strings {
     override val update = "Update"
 
     override val online = "ONLINE"
+
+    override val today = "Today"
+    override val tomorrow = "Tomorrow"
+    override val yesterday = "Yesterday"
+    override val lecture = "Lecture"
+    override val practice = "Practice"
+    override val laboratory = "Lab"
+    override val lessonDefault = "Class"
+    override val pairLabel = "class"
+    override val longBreak = "Long break"
+    override val windowBreak = "Free period"
+    override val disciplineFallback = "Course"
+    override val conferenceLinkPlaceholder = "Online class link (Zoom / Meet)"
+    override val untilTimePrefix = "until"
+    override val minutesShort = "min"
+
+    override fun formatPairsCount(count: Int): String {
+        return "$count ${if (count == 1) "class" else "classes"}"
+    }
+
+    override fun formatWindowWithPairs(count: Int): String {
+        return when {
+            count == 1 -> "Free period (1 class)"
+            count > 1 -> "Free period ($count classes)"
+            else -> "Break between classes"
+        }
+    }
+
+    override fun translateDiscipline(name: String?): String =
+        DisciplineTranslator.translateDiscipline(name, Language.ENGLISH)
 }

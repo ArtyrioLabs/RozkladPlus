@@ -1659,8 +1659,12 @@ fun ModernDayScheduleCard(
     groupId: Int,
     viewModel: PublicScheduleViewModel
 ) {
-    val dateFormat = remember { SimpleDateFormat("d MMMM yyyy", Locale("uk", "UA")) }
-    val dayFormat = remember { SimpleDateFormat("EEEE", Locale("uk", "UA")) }
+    val strings = LocalStrings.current
+    val currentLocale = remember(strings) {
+        if (strings is com.mkr.schedule.util.localization.EnglishStrings) Locale.ENGLISH else Locale("uk", "UA")
+    }
+    val dateFormat = remember(currentLocale) { SimpleDateFormat("d MMMM yyyy", currentLocale) }
+    val dayFormat = remember(currentLocale) { SimpleDateFormat("EEEE", currentLocale) }
     val isoFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
 
     val cleanDateStr = remember(daySchedule.date) { daySchedule.date.take(10) }
@@ -1736,7 +1740,7 @@ fun ModernDayScheduleCard(
                                 color = MaterialTheme.colorScheme.primaryContainer
                             ) {
                                 Text(
-                                    text = "Сьогодні",
+                                    text = strings.today,
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1760,7 +1764,7 @@ fun ModernDayScheduleCard(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Text(
-                    text = formatLessonsCount(flatPeriods.size),
+                    text = strings.formatPairsCount(flatPeriods.size),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1774,11 +1778,11 @@ fun ModernDayScheduleCard(
             flatPeriods.forEachIndexed { idx, entry ->
                 if (idx > 0) {
                     val prevEntry = flatPeriods[idx - 1]
-                    val gapInfo = remember(prevEntry, entry) {
-                        computeLessonGapInfo(prevEntry, entry)
+                    val gapInfo = remember(prevEntry, entry, strings) {
+                        computeLessonGapInfo(prevEntry, entry, strings)
                     }
                     if (gapInfo != null) {
-                        LessonGapIndicator(gapInfo = gapInfo)
+                        LessonGapIndicator(gapInfo = gapInfo, strings = strings)
                     }
                 }
                 val itemShape = groupedCardShape(idx, flatPeriods.size)
@@ -1813,17 +1817,20 @@ private fun parseTimeMinutes(timeStr: String?): Int? {
     return h * 60 + m
 }
 
-private fun formatGapDuration(minutes: Int): String {
+private fun formatGapDuration(minutes: Int, strings: com.mkr.schedule.util.localization.Strings): String {
     val h = minutes / 60
     val m = minutes % 60
+    val isEn = strings is com.mkr.schedule.util.localization.EnglishStrings
+    val hWord = if (isEn) "h" else "год"
+    val mWord = if (isEn) "min" else "хв"
     return when {
-        h > 0 && m > 0 -> "$h год $m хв"
-        h > 0 -> "$h год"
-        else -> "$m хв"
+        h > 0 && m > 0 -> "$h $hWord $m $mWord"
+        h > 0 -> "$h $hWord"
+        else -> "$m $mWord"
     }
 }
 
-private fun computeLessonGapInfo(prev: FlatPeriodEntry, curr: FlatPeriodEntry): LessonGapInfo? {
+private fun computeLessonGapInfo(prev: FlatPeriodEntry, curr: FlatPeriodEntry, strings: com.mkr.schedule.util.localization.Strings): LessonGapInfo? {
     val prevEndMin = parseTimeMinutes(prev.period.timeEnd) ?: return null
     val currStartMin = parseTimeMinutes(curr.period.timeStart) ?: return null
     val gapMinutes = currStartMin - prevEndMin
@@ -1835,30 +1842,24 @@ private fun computeLessonGapInfo(prev: FlatPeriodEntry, curr: FlatPeriodEntry): 
     } else 0
 
     return if (skippedPairs >= 1 || gapMinutes >= 50) {
-        val windowLabel = when {
-            skippedPairs == 1 -> "Вікно (1 пара)"
-            skippedPairs in 2..4 -> "Вікно ($skippedPairs пари)"
-            skippedPairs >= 5 -> "Вікно ($skippedPairs пар)"
-            else -> "Вікно між парами"
-        }
         LessonGapInfo(
             isWindow = true,
-            title = windowLabel,
-            durationText = formatGapDuration(gapMinutes),
+            title = strings.formatWindowWithPairs(skippedPairs),
+            durationText = formatGapDuration(gapMinutes, strings),
             untilTime = currStartClean
         )
     } else {
         LessonGapInfo(
             isWindow = false,
-            title = "Велика перерва",
-            durationText = formatGapDuration(gapMinutes),
+            title = strings.longBreak,
+            durationText = formatGapDuration(gapMinutes, strings),
             untilTime = currStartClean
         )
     }
 }
 
 @Composable
-private fun LessonGapIndicator(gapInfo: LessonGapInfo) {
+private fun LessonGapIndicator(gapInfo: LessonGapInfo, strings: com.mkr.schedule.util.localization.Strings) {
     val containerColor = if (gapInfo.isWindow) {
         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
     } else {
@@ -1903,7 +1904,7 @@ private fun LessonGapIndicator(gapInfo: LessonGapInfo) {
                 text = buildString {
                     append(gapInfo.durationText)
                     if (gapInfo.untilTime.isNotEmpty()) {
-                        append(" • до ${gapInfo.untilTime}")
+                        append(" • ${strings.untilTimePrefix} ${gapInfo.untilTime}")
                     }
                 },
                 style = MaterialTheme.typography.labelSmall,
@@ -1947,14 +1948,15 @@ fun ModernLessonCard(
     viewModel: PublicScheduleViewModel
 ) {
     val context = LocalContext.current
-    val shortName = remember(period) { period.disciplineShortName?.trim() ?: "" }
-    val fullName = remember(period) { period.disciplineFullName?.trim() ?: "" }
+    val strings = LocalStrings.current
+    val shortName = remember(period, strings) { strings.translateDiscipline(period.disciplineShortName?.trim()) }
+    val fullName = remember(period, strings) { strings.translateDiscipline(period.disciplineFullName?.trim()) }
     val primaryTitle = remember(shortName, fullName) {
         when {
             fullName.isNotEmpty() && fullName.length <= 68 -> fullName
             shortName.isNotEmpty() -> shortName
             fullName.isNotEmpty() -> fullName
-            else -> "Дисципліна"
+            else -> strings.disciplineFallback
         }
     }
     val secondaryTitle = remember(shortName, fullName, primaryTitle) {
@@ -1989,10 +1991,10 @@ fun ModernLessonCard(
     }
 
     val lessonKindLabel = when (lessonKind) {
-        LessonKind.LECTURE -> "Лекція"
-        LessonKind.PRACTICE -> "Практика"
-        LessonKind.LAB -> "Лабораторна"
-        LessonKind.OTHER -> "Заняття"
+        LessonKind.LECTURE -> strings.lecture
+        LessonKind.PRACTICE -> strings.practice
+        LessonKind.LAB -> strings.laboratory
+        LessonKind.OTHER -> strings.lessonDefault
     }
 
     var progress by remember { mutableStateOf(0f) }
@@ -2162,7 +2164,7 @@ fun ModernLessonCard(
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
                                 Text(
-                                    text = "$lessonNumber пара",
+                                    text = "$lessonNumber ${strings.pairLabel}",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2392,7 +2394,7 @@ fun ModernLessonCard(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = if (!conferenceLink.isNullOrBlank()) conferenceLink!! else "Посилання на онлайн-пару (Zoom / Meet)",
+                                text = if (!conferenceLink.isNullOrBlank()) conferenceLink!! else strings.conferenceLinkPlaceholder,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (!conferenceLink.isNullOrBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
