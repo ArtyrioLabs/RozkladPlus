@@ -30,8 +30,8 @@ android {
         applicationId = "com.mkr.schedule"
         minSdk = 26
         targetSdk = 34
-        versionCode = 25
-        versionName = "1.8.2"
+        versionCode = 26
+        versionName = "1.8.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
