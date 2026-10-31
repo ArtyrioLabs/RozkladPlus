@@ -842,6 +842,7 @@ private fun ProfileDrawerContent(
     totalXp: Int,
     maxCompletedLessons: Int
 ) {
+    val strings = LocalStrings.current
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -860,8 +861,8 @@ private fun ProfileDrawerContent(
 
     val profileTitle = when {
         uiState.selectedStudent != null -> uiState.selectedStudent.fullName
-        uiState.selectedGroup != null -> "Група ${uiState.selectedGroup.name}"
-        else -> "Профіль не вибрано"
+        uiState.selectedGroup != null -> "${strings.groupPrefix} ${uiState.selectedGroup.name}"
+        else -> strings.noProfileSelected
     }
 
     val profileBadge = buildString {
@@ -917,7 +918,7 @@ private fun ProfileDrawerContent(
                                 color = MaterialTheme.colorScheme.tertiaryContainer
                             ) {
                                 Text(
-                                    text = "Рівень ${levelProgress.level} • $effectiveXp XP",
+                                    text = strings.formatLevel(levelProgress.level, effectiveXp),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -943,7 +944,7 @@ private fun ProfileDrawerContent(
         item(key = "drawer_quick_actions") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Швидкі дії",
+                    text = strings.quickActions,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -953,7 +954,7 @@ private fun ProfileDrawerContent(
                 NavigationDrawerItem(
                     label = {
                         Text(
-                            text = if (isGridView) "Вигляд: Список днів" else "Вигляд: Таблиця тижня",
+                            text = if (isGridView) strings.viewDayList else strings.viewWeekGrid,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -977,7 +978,7 @@ private fun ProfileDrawerContent(
                 NavigationDrawerItem(
                     label = {
                         Text(
-                            text = "Змінити групу або ЗВО",
+                            text = strings.changeGroupOrUniversity,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -998,7 +999,7 @@ private fun ProfileDrawerContent(
                 NavigationDrawerItem(
                     label = {
                         Text(
-                            text = "Налаштування",
+                            text = strings.settings,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -1021,7 +1022,7 @@ private fun ProfileDrawerContent(
         // Bell Schedule Grouped Container
         item(key = "drawer_bell_header") {
             Text(
-                text = "Розклад дзвінків",
+                text = strings.callSchedule,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -1048,7 +1049,7 @@ private fun ProfileDrawerContent(
                     color = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     Text(
-                        text = "Розклад дзвінків для обраного ЗВО недоступний",
+                        text = strings.bellScheduleUnavailable,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp)
@@ -1108,7 +1109,7 @@ private fun ProfileDrawerContent(
                                         }
                                     }
                                     Text(
-                                        text = "${call.number}-та пара",
+                                        text = strings.formatOrdinalClass(call.number),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = if (isCurrentBell) FontWeight.Bold else FontWeight.Medium,
                                         color = if (isCurrentBell) {
@@ -2122,7 +2123,7 @@ fun ModernLessonCard(
                         if (endClean.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "до $endClean",
+                                text = "${strings.untilTimePrefix} $endClean",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Medium,
                                 color = if (isActive) {
@@ -2190,7 +2191,7 @@ fun ModernLessonCard(
                                         tint = MaterialTheme.colorScheme.onSecondaryContainer
                                     )
                                     Text(
-                                        text = "Онлайн",
+                                        text = strings.onlineBadge,
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer

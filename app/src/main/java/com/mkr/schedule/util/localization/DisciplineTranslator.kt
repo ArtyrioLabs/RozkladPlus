@@ -94,8 +94,14 @@ object DisciplineTranslator {
         // Languages & Humanities
         "іноземна мова" to "Foreign Language (English)",
         "іноземна мова за професійним спрямуванням" to "English for Specific Purposes",
+        "іноземна мова інформаційних технологій" to "English for Information Technology",
+        "іноземна мова (інформаційні технології)" to "English for Information Technology",
         "англійська мова" to "English Language",
         "англійська мова за професійним спрямуванням" to "English for Specific Purposes",
+        "англійська мова інформаційних технологій" to "English for Information Technology",
+        "англійська мова (інформаційні технології)" to "English for Information Technology",
+        "іноземна мова професійного спрямування" to "English for Specific Purposes",
+        "англійська мова професійного спрямування" to "English for Specific Purposes",
         "ділова англійська мова" to "Business English",
         "українська мова" to "Ukrainian Language",
         "українська мова за професійним спрямуванням" to "Ukrainian for Professional Purposes",
@@ -151,6 +157,9 @@ object DisciplineTranslator {
         "комп'ютерні" to "Computer",
         "інформаційні" to "Information",
         "інформаційна" to "Information",
+        "інформаційних" to "Information",
+        "професійного" to "Professional",
+        "спрямування" to "Purposes",
         "програмні" to "Software",
         "програмне" to "Software",
         "забезпечення" to "Engineering",
@@ -166,6 +175,10 @@ object DisciplineTranslator {
         "управління" to "Management"
     )
 
+    private val SORTED_DICTIONARY_ENTRIES: List<Map.Entry<String, String>> by lazy {
+        EXACT_DICTIONARY.entries.sortedByDescending { it.key.length }
+    }
+
     /**
      * Translates discipline title if language is English, otherwise returns original.
      */
@@ -175,7 +188,10 @@ object DisciplineTranslator {
 
         val cleaned = title.trim()
         val normalized = cleaned.lowercase()
-            .replace(Regex("""\((лек|пр|лаб|сем|конс|зал|екз)\.?\)""", RegexOption.IGNORE_CASE), "")
+            .replace('`', '\'')
+            .replace('’', '\'')
+            .replace('‘', '\'')
+            .replace(Regex("""\((лек|пр|лаб|сем|конс|зал|екз|п)\.?\)""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\[(лекція|практика|лабораторна)\]""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\s+"""), " ")
             .trim()
@@ -190,8 +206,8 @@ object DisciplineTranslator {
             return if (suffix.isNotEmpty()) "$it $suffix".uppercaseSuffix() else it
         }
 
-        // 3. Substring check
-        for ((key, value) in EXACT_DICTIONARY) {
+        // 3. Substring check — sorted by descending key length to match specific compounds first!
+        for ((key, value) in SORTED_DICTIONARY_ENTRIES) {
             if (normalized.startsWith(key)) {
                 val remainder = normalized.removePrefix(key).trim()
                 return if (remainder.isEmpty()) value else "$value ${remainder.uppercaseSuffix()}"

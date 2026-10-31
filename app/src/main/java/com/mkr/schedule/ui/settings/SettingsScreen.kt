@@ -128,7 +128,7 @@ fun SettingsScreen(
             LogCollector.log("SettingsScreen", "Reminder worker and alarms scheduling requested")
         } catch (e: Exception) {
             LogCollector.log("SettingsScreen", "Failed to schedule alarms: ${e.message}")
-            scope.launch { snackbarHostState.showSnackbar("Не вдалося запустити нагадування") }
+            scope.launch { snackbarHostState.showSnackbar(strings.remindersStartFailed) }
         }
     }
 
@@ -149,7 +149,7 @@ fun SettingsScreen(
         if (isGranted) {
             viewModel.toggleNotifications(true)
             startReminderServiceSafely()
-            scope.launch { snackbarHostState.showSnackbar("Нагадування увімкнено") }
+            scope.launch { snackbarHostState.showSnackbar(strings.remindersEnabledSnackbar) }
         }
     }
 
@@ -199,7 +199,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Section 1: Appearance & Monet Dynamic Theme
-            SettingsSection(title = "Персоналізація та Material You") {
+            SettingsSection(title = strings.personalizationSection) {
                 val hasMonet = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                 SettingsGroupItem(
                     position = if (hasMonet) GroupPosition.TOP else GroupPosition.SINGLE
@@ -221,12 +221,12 @@ fun SettingsScreen(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Тема оформлення",
+                                    text = strings.themeTitle,
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Автоматична, світла або темна палітра",
+                                    text = strings.themeSubtitle,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -234,9 +234,9 @@ fun SettingsScreen(
                         }
 
                         val modes = listOf(
-                            "system" to "Системна",
-                            "light" to "Світла",
-                            "dark" to "Темна"
+                            "system" to strings.themeSystem,
+                            "light" to strings.themeLight,
+                            "dark" to strings.themeDark
                         )
                         SingleChoiceSegmentedButtonRow(
                             modifier = Modifier.fillMaxWidth()
@@ -272,8 +272,8 @@ fun SettingsScreen(
                     SettingsGroupItem(position = GroupPosition.MIDDLE) {
                         SettingsSwitchRow(
                             icon = Icons.Default.Palette,
-                            title = "Динамічні кольори Monet",
-                            subtitle = "Адаптувати кольори інтерфейсу під шпалери",
+                            title = strings.monetTitle,
+                            subtitle = strings.monetSubtitle,
                             checked = dynamicColors,
                             onCheckedChange = { enabled ->
                                 scope.launch { preferences.setDynamicColors(enabled) }
@@ -285,8 +285,8 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.MIDDLE) {
                     SettingsSwitchRow(
                         icon = Icons.Default.AutoAwesome,
-                        title = "Гейміфікація прогресу (XP)",
-                        subtitle = "Показувати рівень та досвід за пройдені пари в меню",
+                        title = strings.gamificationTitle,
+                        subtitle = strings.gamificationSubtitle,
                         checked = isChillModeEnabled,
                         onCheckedChange = { enabled ->
                             viewModel.toggleChillMode(enabled)
@@ -317,7 +317,7 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Мова інтерфейсу застосунку",
+                                    text = strings.languageSubtitle,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -346,12 +346,12 @@ fun SettingsScreen(
             }
 
             // Section 2: Notifications & Reminders
-            SettingsSection(title = "Сповіщення та розклад") {
+            SettingsSection(title = strings.notificationsSection) {
                 SettingsGroupItem(position = GroupPosition.TOP) {
                     SettingsSwitchRow(
                         icon = Icons.Default.NotificationsActive,
-                        title = "Нагадування про пари",
-                        subtitle = "За 15 та 5 хвилин до початку, а також таймер поточної пари",
+                        title = strings.remindersTitle,
+                        subtitle = strings.remindersSubtitle,
                         checked = notificationsEnabled && hasNotificationPermission,
                         onCheckedChange = { enabled ->
                             if (enabled && !hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -365,7 +365,7 @@ fun SettingsScreen(
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(
-                                        if (enabled) "Нагадування увімкнено" else "Нагадування вимкнено"
+                                        if (enabled) strings.remindersEnabledSnackbar else strings.remindersDisabledSnackbar
                                     )
                                 }
                             }
@@ -376,15 +376,15 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.MIDDLE) {
                     SettingsActionRow(
                         icon = Icons.Default.NotificationsActive,
-                        title = "Перевірити сповіщення",
-                        subtitle = "Надіслати тестове нагадування прямо зараз",
+                        title = strings.testNotificationTitle,
+                        subtitle = strings.testNotificationSubtitle,
                         onClick = {
                             if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             } else {
                                 LessonNotificationManager(context).showTestNotification()
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Тестове сповіщення надіслано")
+                                    snackbarHostState.showSnackbar(strings.testNotificationSentSnackbar)
                                 }
                             }
                         }
@@ -394,12 +394,12 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.BOTTOM) {
                     SettingsActionRow(
                         icon = Icons.Default.DeleteSweep,
-                        title = "Очистити кеш розкладу",
-                        subtitle = "Видалити збережені офлайн-дані для повторного завантаження",
+                        title = strings.clearCacheTitle,
+                        subtitle = strings.clearCacheSubtitle,
                         onClick = {
                             viewModel.clearScheduleCache()
                             scope.launch {
-                                snackbarHostState.showSnackbar("Локальний кеш розкладу очищено")
+                                snackbarHostState.showSnackbar(strings.clearCacheSnackbar)
                             }
                         }
                     )
@@ -407,15 +407,15 @@ fun SettingsScreen(
             }
 
             // Section 2.5: Wear OS Companion (Pixel Watch)
-            SettingsSection(title = "Годинник Wear OS (Pixel Watch)") {
+            SettingsSection(title = strings.wearOsSection) {
                 SettingsGroupItem(position = GroupPosition.TOP) {
                     SettingsActionRow(
                         icon = Icons.Default.Sync,
-                        title = "Синхронізувати з годинником",
+                        title = strings.wearSyncTitle,
                         subtitle = if (watchNames.isNotEmpty()) {
-                            "Підключено: ${watchNames.joinToString(", ")}"
+                            strings.wearSyncSubtitleConnected(watchNames.joinToString(", "))
                         } else {
-                            "Надіслати розклад та налаштування на годинник"
+                            strings.wearSyncSubtitleDefault
                         },
                         onClick = {
                             com.mkr.schedule.wear.PhoneWearSyncManager.pushSavedStateToWatch(context)
@@ -423,9 +423,9 @@ fun SettingsScreen(
                                 watchNames = com.mkr.schedule.wear.PhoneWearSyncManager.getConnectedWatchNames(context)
                                 snackbarHostState.showSnackbar(
                                     if (watchNames.isNotEmpty()) {
-                                        "Розклад синхронізовано з ${watchNames.first()}"
+                                        strings.wearSyncSnackbarConnected(watchNames.first())
                                     } else {
-                                        "Дані підготовлено для синхронізації з годинником"
+                                        strings.wearSyncSnackbarDefault
                                     }
                                 )
                             }
@@ -436,15 +436,15 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.MIDDLE) {
                     SettingsSwitchRow(
                         icon = Icons.Default.Watch,
-                        title = "Сповіщення на годиннику",
-                        subtitle = "Нагадування за 5 хв до пари та живий таймер на Pixel Watch",
+                        title = strings.wearNotificationsTitle,
+                        subtitle = strings.wearNotificationsSubtitle,
                         checked = watchNotificationsEnabled,
                         onCheckedChange = { enabled ->
                             watchNotificationsEnabled = enabled
                             com.mkr.schedule.wear.PhoneWearSyncManager.setWatchNotificationsEnabled(context, enabled)
                             scope.launch {
                                 snackbarHostState.showSnackbar(
-                                    if (enabled) "Сповіщення на годиннику увімкнено" else "Сповіщення на годиннику вимкнено"
+                                    if (enabled) strings.wearNotificationsEnabledSnackbar else strings.wearNotificationsDisabledSnackbar
                                 )
                             }
                         }
@@ -454,8 +454,8 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.MIDDLE) {
                     SettingsSwitchRow(
                         icon = Icons.Default.AutoAwesome,
-                        title = "Перерви та вікна на годиннику",
-                        subtitle = "Показувати картки великої перерви та вікон між парами",
+                        title = strings.wearBreaksTitle,
+                        subtitle = strings.wearBreaksSubtitle,
                         checked = watchShowBreaks,
                         onCheckedChange = { enabled ->
                             watchShowBreaks = enabled
@@ -467,14 +467,14 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.BOTTOM) {
                     SettingsActionRow(
                         icon = Icons.Default.NotificationsActive,
-                        title = "Тестове сповіщення на годинник",
-                        subtitle = "Перевірити вібрацію та картку пари на годиннику",
+                        title = strings.wearTestNotificationTitle,
+                        subtitle = strings.wearTestNotificationSubtitle,
                         onClick = {
                             scope.launch {
                                 val ok = com.mkr.schedule.wear.PhoneWearSyncManager.sendTestNotificationToWatch(context)
                                 snackbarHostState.showSnackbar(
-                                    if (ok) "Тестове сповіщення надіслано на годинник"
-                                    else "Годинник не знайдено поруч по Bluetooth"
+                                    if (ok) strings.wearTestNotificationSuccess
+                                    else strings.wearTestNotificationNotFound
                                 )
                             }
                         }
@@ -483,12 +483,12 @@ fun SettingsScreen(
             }
 
             // Section 3: System & Updates
-            SettingsSection(title = "Система та підтримка") {
+            SettingsSection(title = strings.systemSection) {
                 SettingsGroupItem(position = GroupPosition.TOP) {
                     SettingsActionRow(
                         icon = Icons.Default.SystemUpdate,
-                        title = if (updateInProgress) "Перевірка оновлень..." else "Перевірити оновлення",
-                        subtitle = "Поточна версія ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        title = if (updateInProgress) strings.checkingUpdatesTitle else strings.checkUpdatesTitle,
+                        subtitle = strings.currentVersionSubtitle(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                         enabled = !updateInProgress,
                         onClick = {
                             scope.launch {
@@ -498,7 +498,7 @@ fun SettingsScreen(
                                 if (update != null) {
                                     updateInfo = update
                                 } else {
-                                    snackbarHostState.showSnackbar("У вас встановлена актуальна версія")
+                                    snackbarHostState.showSnackbar(strings.latestVersionInstalledSnackbar)
                                 }
                             }
                         }
@@ -509,7 +509,7 @@ fun SettingsScreen(
                     SettingsActionRow(
                         icon = Icons.Default.BugReport,
                         title = strings.logs,
-                        subtitle = "Журнал діагностики та мережевих запитів",
+                        subtitle = strings.diagnosticLogsSubtitle,
                         onClick = { showLogsDialog = true }
                     )
                 }
@@ -517,8 +517,8 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.MIDDLE) {
                     SettingsActionRow(
                         icon = Icons.Default.StarRate,
-                        title = "Оцінити застосунок",
-                        subtitle = "Ваша оцінка допомагає розвитку проєкту",
+                        title = strings.rateAppTitle,
+                        subtitle = strings.rateAppSubtitle,
                         onClick = {
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
@@ -541,8 +541,8 @@ fun SettingsScreen(
                 SettingsGroupItem(position = GroupPosition.MIDDLE) {
                     SettingsActionRow(
                         icon = Icons.Default.Favorite,
-                        title = "Підтримати розробника",
-                        subtitle = "Подякувати за безкоштовний застосунок без реклами",
+                        title = strings.donateTitle,
+                        subtitle = strings.donateSubtitle,
                         onClick = { showDonateConfirm = true }
                     )
                 }
@@ -551,7 +551,7 @@ fun SettingsScreen(
                     SettingsActionRow(
                         icon = Icons.Default.Info,
                         title = strings.about,
-                        subtitle = "Інформація про Розклад+",
+                        subtitle = strings.aboutAppSubtitle,
                         onClick = { showAboutDialog = true }
                     )
                 }
@@ -564,7 +564,7 @@ fun SettingsScreen(
             LogsDialog(
                 onDismiss = { showLogsDialog = false },
                 onShared = {
-                    scope.launch { snackbarHostState.showSnackbar("Логи підготовлено") }
+                    scope.launch { snackbarHostState.showSnackbar(strings.logsReadySnackbar) }
                 }
             )
         }
@@ -581,16 +581,16 @@ fun SettingsScreen(
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        InfoRow("Застосунок", "Розклад+")
+                        InfoRow(strings.appNameLabel, "Rozklad+")
                         InfoRow(strings.version, "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                        InfoRow("Дизайн", "Material 3 Expressive • Monet")
+                        InfoRow(strings.designLabel, "Material 3 Expressive • Monet")
                         InfoRow(strings.developer, "ArtyrioLabs")
-                        InfoRow("Безпека", "AES256-GCM • Перевірка підпису")
+                        InfoRow(strings.securityLabel, strings.securityDetails)
                     }
                 },
                 confirmButton = {
                     FilledTonalButton(onClick = { showAboutDialog = false }) {
-                        Text("Зрозуміло")
+                        Text(strings.gotIt)
                     }
                 },
                 shape = RoundedCornerShape(28.dp)
@@ -608,7 +608,7 @@ fun SettingsScreen(
                     )
                 },
                 text = {
-                    Text("Версія ${update.versionName}\n\n${update.changelog}")
+                    Text("${strings.version} ${update.versionName}\n\n${update.changelog}")
                 },
                 confirmButton = {
                     Button(
@@ -630,16 +630,13 @@ fun SettingsScreen(
                 onDismissRequest = { showDonateConfirm = false },
                 title = {
                     Text(
-                        text = "Дякую за підтримку Розклад+",
+                        text = strings.donateDialogTitle,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 text = {
-                    Text(
-                        "Цей застосунок розробляється у вільний час і є повністю безкоштовним.\n\n" +
-                            "Якщо розклад допомагає тобі не запізнюватись — можна підтримати автора символічним донатом."
-                    )
+                    Text(strings.donateDialogText)
                 },
                 confirmButton = {
                     Button(onClick = {
@@ -649,11 +646,11 @@ fun SettingsScreen(
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         )
                     }) {
-                        Text("Підтримати")
+                        Text(strings.donateConfirmButton)
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDonateConfirm = false }) { Text("Наступного разу") }
+                    TextButton(onClick = { showDonateConfirm = false }) { Text(strings.donateDismissButton) }
                 },
                 shape = RoundedCornerShape(28.dp)
             )
@@ -856,11 +853,12 @@ private fun LogsDialog(
     onShared: () -> Unit
 ) {
     val context = LocalContext.current
+    val strings = LocalStrings.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Журнал роботи",
+                text = strings.logsTitle,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -869,7 +867,7 @@ private fun LogsDialog(
             val logs: List<String> = LogCollector.getLogs()
             if (logs.isEmpty()) {
                 Text(
-                    text = "Журнал наразі порожній",
+                    text = strings.logsEmpty,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -912,15 +910,15 @@ private fun LogsDialog(
                         )
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    context.startActivity(Intent.createChooser(intent, "Поділитися логами"))
+                    context.startActivity(Intent.createChooser(intent, strings.shareLogs))
                     onShared()
                 }
             ) {
-                Text("Поділитися")
+                Text(strings.share)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Закрити") }
+            TextButton(onClick = onDismiss) { Text(strings.close) }
         },
         shape = RoundedCornerShape(28.dp)
     )
