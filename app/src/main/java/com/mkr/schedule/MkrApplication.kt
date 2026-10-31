@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Build
+import com.mkr.schedule.util.AppAnalytics
 import com.mkr.schedule.util.LauncherIconColorSync
 import com.mkr.schedule.util.LogCollector
 import dagger.hilt.android.HiltAndroidApp
@@ -16,9 +17,12 @@ class MkrApplication : Application() {
 	override fun onCreate() {
 		super.onCreate()
 
+		AppAnalytics.init(this)
+
 		val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
 
 		Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+			AppAnalytics.recordException(throwable)
 			LogCollector.log(
 				"FatalCrash",
 				"Thread=${thread.name}, ${throwable.message}\n${throwable.stackTraceToString()}"

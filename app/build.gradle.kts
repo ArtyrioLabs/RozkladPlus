@@ -20,6 +20,8 @@ plugins {
     id("com.google.dagger.hilt.android")
     kotlin("kapt")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -30,8 +32,8 @@ android {
         applicationId = "com.mkr.schedule"
         minSdk = 26
         targetSdk = 34
-        versionCode = 27
-        versionName = "1.8.4"
+        versionCode = 28
+        versionName = "1.8.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -176,6 +178,11 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     
+    // Firebase (Analytics & Crashlytics)
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-crashlytics")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
