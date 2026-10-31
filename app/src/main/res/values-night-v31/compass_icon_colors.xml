@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="compass_mint">@android:color/system_accent2_800</color>
+    <color name="compass_forest">@android:color/system_accent1_200</color>
+    <color name="compass_ivory">@android:color/system_accent2_900</color>
+</resources>

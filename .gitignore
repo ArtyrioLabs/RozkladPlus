@@ -1,0 +1,48 @@
+*.iml
+.gradle
+.idea/
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/app/build
+/wear/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Build artifacts & logs
+*.apk
+*.aab
+*.lineage
+*.log
+release/
+app/debug/
+app/release/
+
+# Internal server & scratch files
+ota-server/
+ota-update.*
+mkr_ideas_100.md
+web/
+
+# Keystore and signing files
+*.jks
+*.keystore
+keystore.properties
+
+# Wear OS module (work-in-progress, not published yet)
+/wear/
+
+# Internal task documentation
+TASK.md
+
+# Local helper scripts (do not publish to GitHub)
+*.bat
+*.sh

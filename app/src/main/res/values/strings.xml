@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Розклад+</string>
+    <string name="login">Вхід</string>
+    <string name="username">Логін</string>
+    <string name="password">Пароль</string>
+    <string name="app_key">Ключ додатку</string>
+    <string name="schedule">Розклад</string>
+    <string name="journal">Журнал</string>
+    <string name="profile">Профіль</string>
+    <string name="logout">Вихід</string>
+    <string name="loading">Завантаження...</string>
+    <string name="error">Помилка</string>
+    <string name="retry">Спробувати ще раз</string>
+    <string name="today">Сьогодні</string>
+    <string name="tomorrow">Завтра</string>
+    <string name="week">Тиждень</string>
+    <string name="no_lessons">Немає занять</string>
+    <string name="group">Група</string>
+    <string name="student">Студент</string>
+    <string name="teacher">Викладач</string>
+    <string name="shortcut_schedule_short">Розклад+</string>
+    <string name="shortcut_schedule_long">Відкрити Розклад+</string>
+</resources>
