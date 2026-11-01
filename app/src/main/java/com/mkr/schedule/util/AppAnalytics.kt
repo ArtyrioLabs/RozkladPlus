@@ -14,11 +14,24 @@ object AppAnalytics {
 
     fun init(context: Context) {
         try {
-            firebaseAnalytics = FirebaseAnalytics.getInstance(context.applicationContext)
+            val analytics = FirebaseAnalytics.getInstance(context.applicationContext)
+            firebaseAnalytics = analytics
             FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(true)
+
+            val bundle = Bundle().apply {
+                putString("app_version", com.mkr.schedule.BuildConfig.VERSION_NAME)
+                putLong("timestamp", System.currentTimeMillis())
+            }
+            analytics.logEvent(FirebaseAnalytics.Event.APP_OPEN, bundle)
         } catch (e: Exception) {
             LogCollector.log("AppAnalytics", "Failed to init Firebase: ${e.message}")
         }
+    }
+
+    fun logAppOpen() {
+        try {
+            firebaseAnalytics?.logEvent(FirebaseAnalytics.Event.APP_OPEN, null)
+        } catch (_: Exception) {}
     }
 
     fun logScheduleView(groupName: String?, university: String?) {

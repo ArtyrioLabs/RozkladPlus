@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        com.mkr.schedule.util.AppAnalytics.logAppOpen()
+
         // Schedule background notification reminders if enabled
         lifecycleScope.launch {
             if (preferencesManager.getNotificationsEnabled()) {

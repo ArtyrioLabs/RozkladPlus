@@ -139,6 +139,13 @@ fun PublicScheduleScreen(
         calculateScheduleProgress(uiState.schedule, progressNow)
     }
 
+    LaunchedEffect(uiState.selectedGroup?.id) {
+        uiState.selectedGroup?.let { group ->
+            com.mkr.schedule.util.AppAnalytics.logGroupSelected(group.name)
+            com.mkr.schedule.util.AppAnalytics.logScheduleView(group.name, uiState.selectedUniversity?.shortName)
+        }
+    }
+
     LaunchedEffect(liveProgressStats.completedLessons, persistedMaxCompletedLessons, persistedXp) {
         if (liveProgressStats.completedLessons > persistedMaxCompletedLessons) {
             val gainedLessons = liveProgressStats.completedLessons - persistedMaxCompletedLessons
