@@ -96,18 +96,6 @@ fun SettingsScreen(
     var updateInfo by remember { mutableStateOf<AppUpdate?>(null) }
     var showDonateConfirm by remember { mutableStateOf(false) }
 
-    var watchNames by remember { mutableStateOf<List<String>>(emptyList()) }
-    var watchNotificationsEnabled by remember {
-        mutableStateOf(com.mkr.schedule.wear.PhoneWearSyncManager.isWatchNotificationsEnabled(context))
-    }
-    var watchShowBreaks by remember {
-        mutableStateOf(com.mkr.schedule.wear.PhoneWearSyncManager.isWatchShowBreaksEnabled(context))
-    }
-
-    LaunchedEffect(Unit) {
-        watchNames = com.mkr.schedule.wear.PhoneWearSyncManager.getConnectedWatchNames(context)
-    }
-
     var hasNotificationPermission by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -400,82 +388,6 @@ fun SettingsScreen(
                             viewModel.clearScheduleCache()
                             scope.launch {
                                 snackbarHostState.showSnackbar(strings.clearCacheSnackbar)
-                            }
-                        }
-                    )
-                }
-            }
-
-            // Section 2.5: Wear OS Companion (Pixel Watch)
-            SettingsSection(title = strings.wearOsSection) {
-                SettingsGroupItem(position = GroupPosition.TOP) {
-                    SettingsActionRow(
-                        icon = Icons.Default.Sync,
-                        title = strings.wearSyncTitle,
-                        subtitle = if (watchNames.isNotEmpty()) {
-                            strings.wearSyncSubtitleConnected(watchNames.joinToString(", "))
-                        } else {
-                            strings.wearSyncSubtitleDefault
-                        },
-                        onClick = {
-                            com.mkr.schedule.wear.PhoneWearSyncManager.pushSavedStateToWatch(context)
-                            scope.launch {
-                                watchNames = com.mkr.schedule.wear.PhoneWearSyncManager.getConnectedWatchNames(context)
-                                snackbarHostState.showSnackbar(
-                                    if (watchNames.isNotEmpty()) {
-                                        strings.wearSyncSnackbarConnected(watchNames.first())
-                                    } else {
-                                        strings.wearSyncSnackbarDefault
-                                    }
-                                )
-                            }
-                        }
-                    )
-                }
-
-                SettingsGroupItem(position = GroupPosition.MIDDLE) {
-                    SettingsSwitchRow(
-                        icon = Icons.Default.Watch,
-                        title = strings.wearNotificationsTitle,
-                        subtitle = strings.wearNotificationsSubtitle,
-                        checked = watchNotificationsEnabled,
-                        onCheckedChange = { enabled ->
-                            watchNotificationsEnabled = enabled
-                            com.mkr.schedule.wear.PhoneWearSyncManager.setWatchNotificationsEnabled(context, enabled)
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    if (enabled) strings.wearNotificationsEnabledSnackbar else strings.wearNotificationsDisabledSnackbar
-                                )
-                            }
-                        }
-                    )
-                }
-
-                SettingsGroupItem(position = GroupPosition.MIDDLE) {
-                    SettingsSwitchRow(
-                        icon = Icons.Default.AutoAwesome,
-                        title = strings.wearBreaksTitle,
-                        subtitle = strings.wearBreaksSubtitle,
-                        checked = watchShowBreaks,
-                        onCheckedChange = { enabled ->
-                            watchShowBreaks = enabled
-                            com.mkr.schedule.wear.PhoneWearSyncManager.setWatchShowBreaksEnabled(context, enabled)
-                        }
-                    )
-                }
-
-                SettingsGroupItem(position = GroupPosition.BOTTOM) {
-                    SettingsActionRow(
-                        icon = Icons.Default.NotificationsActive,
-                        title = strings.wearTestNotificationTitle,
-                        subtitle = strings.wearTestNotificationSubtitle,
-                        onClick = {
-                            scope.launch {
-                                val ok = com.mkr.schedule.wear.PhoneWearSyncManager.sendTestNotificationToWatch(context)
-                                snackbarHostState.showSnackbar(
-                                    if (ok) strings.wearTestNotificationSuccess
-                                    else strings.wearTestNotificationNotFound
-                                )
                             }
                         }
                     )

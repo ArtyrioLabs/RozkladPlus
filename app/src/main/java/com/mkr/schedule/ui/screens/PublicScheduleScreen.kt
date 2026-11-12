@@ -2042,23 +2042,38 @@ fun ModernLessonCard(
         }
     }
 
-    // Notes & Conference Link State
-    val lessonKey = "note_${date}_${period.disciplineId ?: period.disciplineShortName}_${startClean}"
-    val notesMap by viewModel.notesMap.collectAsState()
-    val savedNote = notesMap[lessonKey] ?: ""
-    val conferenceLink by remember(groupId, period.disciplineId) {
-        viewModel.getConferenceLinkFlow(groupId, period.disciplineId)
-    }.collectAsState(initial = null)
+    // Ссылка на онлайн-конференцию из API МКР (/time-table/schedule-ad или из поля аудитории)
+    val lessonLinksMap by viewModel.lessonLinksMap.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+    val conferenceLink = remember(period, date, lessonLinksMap) {
+        val r1Key = period.r1?.let { "r1_${it}_$date" }
+        val discKey = period.disciplineId?.let { "disc_$it" }
+        (r1Key?.let { lessonLinksMap[it] })
+            ?: (discKey?.let { lessonLinksMap[it] })
+            ?: viewModel.extractConferenceUrl(period.classroom)
+            ?: viewModel.extractConferenceUrl(period.disciplineFullName)
+    }
 
-    var isExpanded by rememberSaveable(lessonKey) { mutableStateOf(false) }
-    var noteDraft by remember(savedNote) { mutableStateOf(savedNote) }
-    var linkDraft by remember(conferenceLink) { mutableStateOf(conferenceLink ?: "") }
-    var showLinkEditor by remember { mutableStateOf(false) }
+    // Если у пары есть объявление в МКР, но ссылка ещё не в кэше — подгружаем при появлении карточки
+    LaunchedEffect(period.r1, date, period.extraText) {
+        if (conferenceLink == null && period.r1 != null && period.extraText == true) {
+            viewModel.fetchLessonLinkIfNeeded(period, date)
+        }
+    }
+
+    val linkChip = remember(conferenceLink) {
+        conferenceLink?.takeIf { it.isNotBlank() }?.let { raw ->
+            val classified = classifySmartLink(raw.trim())
+            if (classified.label == "Посилання") classified.copy(label = "Приєднатися") else classified
+        }
+    }
+
+    val canClickCard = linkChip != null || (period.r1 != null && period.extraText == true)
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.985f else 1f,
+        targetValue = if (isPressed && canClickCard) 0.985f else 1f,
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "lesson_card_scale"
     )
@@ -2084,7 +2099,19 @@ fun ModernLessonCard(
             .fillMaxWidth()
             .scale(scale)
             .animateContentSize(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
-        onClick = { isExpanded = !isExpanded },
+        onClick = {
+            if (!conferenceLink.isNullOrBlank()) {
+                openUrlSafely(context, conferenceLink)
+            } else if (period.r1 != null && period.extraText == true) {
+                coroutineScope.launch {
+                    val fetched = viewModel.fetchLessonLinkIfNeeded(period, date)
+                    if (!fetched.isNullOrBlank()) {
+                        openUrlSafely(context, fetched)
+                    }
+                }
+            }
+        },
+        enabled = canClickCard,
         interactionSource = interactionSource,
         shape = shape,
         color = cardContainerColor
@@ -2100,7 +2127,7 @@ fun ModernLessonCard(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.Top
             ) {
-                // LEFT TIME BLOCK: Prominent Start Time, Subtle Secondary End Time
+                // Блок времени слева: крупно начало пары, аккуратно конец
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = if (isActive) {
@@ -2115,7 +2142,6 @@ fun ModernLessonCard(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        // Start Time — Hero Accent
                         Text(
                             text = startClean,
                             style = MaterialTheme.typography.titleLarge,
@@ -2126,7 +2152,6 @@ fun ModernLessonCard(
                                 MaterialTheme.colorScheme.onSurface
                             }
                         )
-                        // End Time — Subtle & Unobtrusive
                         if (endClean.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
@@ -2143,12 +2168,11 @@ fun ModernLessonCard(
                     }
                 }
 
-                // RIGHT CONTENT BLOCK: Badges, Subject Title, Clean Metadata
+                // Основной контент карточки: бейджи, предмет, преподаватель и кнопка-чип конференции
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Top Row: Type Badge + Pair Number + Active/Note/Link Indicators
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -2176,6 +2200,22 @@ fun ModernLessonCard(
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        // Если в API стоит флаг нестандартного времени пары — сразу подсвечиваем студенту
+                        if (period.nonstandardTime == true) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer
+                            ) {
+                                Text(
+                                    text = strings.nonstandardTimeBadge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
@@ -2232,27 +2272,53 @@ fun ModernLessonCard(
                                 }
                             }
                         }
+
+                        if (linkChip != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = linkChip.icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(13.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = linkChip.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
                     }
 
-                    // Subject Name: Clear & Readable
                     Text(
                         text = primaryTitle,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = if (isExpanded) 5 else 3,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    if (secondaryTitle != null && isExpanded) {
+                    if (secondaryTitle != null) {
                         Text(
                             text = secondaryTitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // Teacher Name: Clean Inline Row without Box Clutter
                     val teacherName = period.teachersNameFull?.takeIf { it.isNotBlank() }
                         ?: period.teachersName?.takeIf { it.isNotBlank() }
                     if (teacherName != null) {
@@ -2270,305 +2336,11 @@ fun ModernLessonCard(
                                 text = teacherName,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = if (isExpanded) 3 else 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    // Smart Chips for Links, Deadlines & Notes (#5)
-                    val smartNote = remember(savedNote, conferenceLink) {
-                        parseSmartNoteData(savedNote, conferenceLink)
-                    }
-                    if (!isExpanded && (smartNote.links.isNotEmpty() || smartNote.deadlines.isNotEmpty() || smartNote.cleanText.isNotBlank())) {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.padding(top = 2.dp)
-                        ) {
-                            smartNote.links.forEach { linkChip ->
-                                Surface(
-                                    onClick = { openUrlSafely(context, linkChip.url) },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = linkChip.icon,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(13.dp),
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Text(
-                                            text = linkChip.label,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
-                            }
-                            smartNote.deadlines.forEach { deadlineLabel ->
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.errorContainer
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CalendarToday,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(12.dp),
-                                            tint = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                        Text(
-                                            text = deadlineLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    }
-                                }
-                            }
-                            if (smartNote.cleanText.isNotBlank()) {
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.75f)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(12.dp),
-                                            tint = MaterialTheme.colorScheme.onTertiaryContainer
-                                        )
-                                        Text(
-                                            text = smartNote.cleanText,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // EXPANDED PANEL: Notes & Online Conference Link (Zero Clutter When Collapsed!)
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()) +
-                    expandVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
-                exit = fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()) +
-                    shrinkVertically(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec())
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-                    // Conference Link Section
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Link,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = if (!conferenceLink.isNullOrBlank()) conferenceLink!! else strings.conferenceLinkPlaceholder,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (!conferenceLink.isNullOrBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (!conferenceLink.isNullOrBlank()) {
-                                FilledTonalButton(
-                                    onClick = { openUrlSafely(context, conferenceLink!!) },
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    modifier = Modifier.height(34.dp)
-                                ) {
-                                    Text("Відкрити", style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                            IconButton(
-                                onClick = {
-                                    linkDraft = conferenceLink ?: ""
-                                    showLinkEditor = !showLinkEditor
-                                },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (conferenceLink.isNullOrBlank()) Icons.Default.AddLink else Icons.Default.Edit,
-                                    contentDescription = "Редагувати посилання",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
                     }
-
-                    if (showLinkEditor) {
-                        OutlinedTextField(
-                            value = linkDraft,
-                            onValueChange = { linkDraft = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("https://zoom.us/j/... або meet.google.com/...", style = MaterialTheme.typography.bodySmall) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(14.dp),
-                            trailingIcon = {
-                                Row {
-                                    if (linkDraft.isNotBlank()) {
-                                        IconButton(onClick = {
-                                            viewModel.deleteConferenceLink(groupId, period.disciplineId)
-                                            linkDraft = ""
-                                            showLinkEditor = false
-                                        }) {
-                                            Icon(Icons.Default.DeleteOutline, contentDescription = "Видалити")
-                                        }
-                                    }
-                                    IconButton(onClick = {
-                                        viewModel.saveConferenceLink(groupId, period.disciplineId, linkDraft)
-                                        showLinkEditor = false
-                                    }) {
-                                        Icon(Icons.Default.Check, contentDescription = "Зберегти")
-                                    }
-                                }
-                            },
-                            textStyle = MaterialTheme.typography.bodySmall
-                        )
-                    }
-
-                    // Encrypted Note Field with Smart Chips recognition (#5)
-                    val draftSmartNote = remember(noteDraft, conferenceLink) {
-                        parseSmartNoteData(noteDraft, conferenceLink)
-                    }
-                    if (draftSmartNote.links.isNotEmpty() || draftSmartNote.deadlines.isNotEmpty()) {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            draftSmartNote.links.forEach { linkChip ->
-                                Surface(
-                                    onClick = { openUrlSafely(context, linkChip.url) },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = linkChip.icon,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(13.dp),
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Text(
-                                            text = linkChip.label,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
-                            }
-                            draftSmartNote.deadlines.forEach { deadlineLabel ->
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.errorContainer
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CalendarToday,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(12.dp),
-                                            tint = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                        Text(
-                                            text = deadlineLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = noteDraft,
-                        onValueChange = { noteDraft = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text(
-                                text = "Нотатка, посилання (Zoom/Meet/Drive/TG) або дедлайн (до 15.11)...",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        trailingIcon = {
-                            if (noteDraft != savedNote) {
-                                IconButton(
-                                    onClick = {
-                                        viewModel.saveNote(lessonKey, noteDraft)
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Зберегти нотатку",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            } else if (savedNote.isNotBlank()) {
-                                IconButton(
-                                    onClick = {
-                                        noteDraft = ""
-                                        viewModel.saveNote(lessonKey, "")
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.DeleteOutline,
-                                        contentDescription = "Очистити нотатку"
-                                    )
-                                }
-                            }
-                        },
-                        textStyle = MaterialTheme.typography.bodySmall
-                    )
                 }
             }
         }
@@ -2579,27 +2351,6 @@ private data class SmartLinkChip(
     val label: String,
     val url: String,
     val icon: ImageVector
-)
-
-private data class SmartNoteData(
-    val links: List<SmartLinkChip>,
-    val deadlines: List<String>,
-    val cleanText: String
-)
-
-private val URL_EXTRACT_REGEX = Regex(
-    """(?:https?://[^\s,;)"]+)|(?:(?:meet\.google\.com|zoom\.us|us\d+web\.zoom\.us|teams\.microsoft\.com|teams\.live\.com|t\.me|telegram\.me|drive\.google\.com|docs\.google\.com|classroom\.google\.com|dl\.knute\.edu\.ua|github\.com|figma\.com)/[^\s,;)"]*)""",
-    RegexOption.IGNORE_CASE
-)
-
-private val DEADLINE_DATE_REGEX = Regex(
-    """(?:(до|на|дедлайн|здати|захист|екзамен|залік|тест|кр|контрольна|модуль|лаба|лр)\s*:?\s*)?(\b\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?\b)""",
-    RegexOption.IGNORE_CASE
-)
-
-private val TASK_KEYWORD_REGEX = Regex(
-    """\b(дедлайн|контрольна|модуль|захист|екзамен|залік|колоквіум)\b""",
-    RegexOption.IGNORE_CASE
 )
 
 private fun classifySmartLink(rawUrl: String): SmartLinkChip {
@@ -2615,66 +2366,6 @@ private fun classifySmartLink(rawUrl: String): SmartLinkChip {
         lower.contains("github.com") -> SmartLinkChip("GitHub", rawUrl, Icons.AutoMirrored.Filled.OpenInNew)
         else -> SmartLinkChip("Посилання", rawUrl, Icons.AutoMirrored.Filled.OpenInNew)
     }
-}
-
-private fun parseSmartNoteData(note: String, conferenceLink: String?): SmartNoteData {
-    val links = mutableListOf<SmartLinkChip>()
-    val seenUrls = mutableSetOf<String>()
-
-    if (!conferenceLink.isNullOrBlank()) {
-        val trimmed = conferenceLink.trim()
-        seenUrls.add(trimmed.lowercase(Locale.getDefault()))
-        val classified = classifySmartLink(trimmed)
-        val label = if (classified.label == "Посилання") "Приєднатися" else classified.label
-        links.add(classified.copy(label = label))
-    }
-
-    if (note.isNotBlank()) {
-        URL_EXTRACT_REGEX.findAll(note).forEach { match ->
-            val url = match.value.trimEnd('.', ',', ';', ')')
-            if (seenUrls.add(url.lowercase(Locale.getDefault()))) {
-                links.add(classifySmartLink(url))
-            }
-        }
-    }
-
-    val deadlines = mutableListOf<String>()
-    if (note.isNotBlank()) {
-        val textWithoutUrls = URL_EXTRACT_REGEX.replace(note, " ")
-        DEADLINE_DATE_REGEX.findAll(textWithoutUrls).forEach { match ->
-            val prefix = match.groupValues[1].trim()
-            val datePart = match.groupValues[2].trim()
-            val chipText = when {
-                prefix.isEmpty() -> "Дедлайн $datePart"
-                prefix.equals("до", ignoreCase = true) -> "Дедлайн до $datePart"
-                prefix.equals("на", ignoreCase = true) -> "На $datePart"
-                else -> "${prefix.replaceFirstChar { it.uppercase() }} $datePart"
-            }
-            if (!deadlines.contains(chipText)) {
-                deadlines.add(chipText)
-            }
-        }
-        if (deadlines.isEmpty()) {
-            TASK_KEYWORD_REGEX.findAll(textWithoutUrls).forEach { match ->
-                val kw = match.value.replaceFirstChar { it.uppercase() }
-                if (!deadlines.contains(kw)) {
-                    deadlines.add(kw)
-                }
-            }
-        }
-    }
-
-    val cleanText = if (note.isNotBlank()) {
-        URL_EXTRACT_REGEX.replace(note, "")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
-    } else ""
-
-    return SmartNoteData(
-        links = links,
-        deadlines = deadlines,
-        cleanText = cleanText
-    )
 }
 
 private fun openUrlSafely(context: android.content.Context, rawUrl: String) {

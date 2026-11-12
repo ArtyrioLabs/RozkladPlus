@@ -86,7 +86,8 @@ class SettingsViewModel @Inject constructor(
     fun clearScheduleCache() {
         viewModelScope.launch {
             preferencesManager.getScheduleCachePrefs().edit().clear().apply()
-            LogCollector.log("SettingsViewModel", "Schedule cache cleared")
+            preferencesManager.getApiLinksPrefs().edit().clear().apply()
+            LogCollector.log("SettingsViewModel", "Schedule and API links cache cleared")
         }
     }
 

@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 import java.io.FileInputStream
 
 val localPropertiesFile = rootProject.file("local.properties")
@@ -32,8 +32,8 @@ android {
         applicationId = "com.mkr.schedule"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "1.8.6"
+        versionCode = 30
+        versionName = "1.8.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

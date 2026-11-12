@@ -106,6 +106,7 @@ interface Strings {
     val untilTimePrefix: String
     val minutesShort: String
     val onlineBadge: String
+    val nonstandardTimeBadge: String
 
     // Navigation Drawer
     val quickActions: String
@@ -256,6 +257,7 @@ object UkrainianStrings : Strings {
 
     override val online = "ONLINE"
     override val onlineBadge = "Онлайн"
+    override val nonstandardTimeBadge = "Зміщений час"
 
     override val today = "Сьогодні"
     override val tomorrow = "Завтра"
@@ -442,6 +444,7 @@ object EnglishStrings : Strings {
 
     override val online = "ONLINE"
     override val onlineBadge = "Online"
+    override val nonstandardTimeBadge = "Shifted time"
 
     override val today = "Today"
     override val tomorrow = "Tomorrow"

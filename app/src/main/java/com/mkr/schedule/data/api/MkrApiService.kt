@@ -76,5 +76,12 @@ interface MkrApiService {
         @Header("Authorization") token: String? = null,
         @Body form: StudentTimeTableForm
     ): Response<List<TimeTableDate>>
+
+    // Подтягиваем объявление к паре (оттуда достаём ссылки на онлайн-конференции)
+    @POST("time-table/schedule-ad")
+    suspend fun getScheduleAd(
+        @Header("Authorization") token: String? = null,
+        @Body form: ScheduleAdForm
+    ): Response<ScheduleAdResponse>
 }
 

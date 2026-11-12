@@ -239,44 +239,6 @@ class PreferencesManager @Inject constructor(
         preferences[SELECTED_COURSE_KEY]?.takeIf { it.isNotBlank() && it != "0" }
     }
 
-    private fun getConferenceLinkKey(groupId: Int, disciplineId: Int?): Preferences.Key<String> {
-        val key = "conference_link_${groupId}_${disciplineId ?: "unknown"}"
-        return stringPreferencesKey(key)
-    }
-
-    suspend fun saveConferenceLink(groupId: Int, disciplineId: Int?, link: String) {
-        context.dataStore.edit { preferences ->
-            if (link.isBlank()) {
-                preferences.remove(getConferenceLinkKey(groupId, disciplineId))
-            } else {
-                preferences[getConferenceLinkKey(groupId, disciplineId)] = link.trim()
-            }
-        }
-    }
-
-    suspend fun getConferenceLink(groupId: Int, disciplineId: Int?): String? {
-        return try {
-            val key = getConferenceLinkKey(groupId, disciplineId)
-            context.dataStore.data.map { preferences ->
-                preferences[key]
-            }.first()
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    fun getConferenceLinkFlow(groupId: Int, disciplineId: Int?): Flow<String?> {
-        return context.dataStore.data.map { preferences ->
-            preferences[getConferenceLinkKey(groupId, disciplineId)]
-        }
-    }
-
-    suspend fun deleteConferenceLink(groupId: Int, disciplineId: Int?) {
-        context.dataStore.edit { preferences ->
-            preferences.remove(getConferenceLinkKey(groupId, disciplineId))
-        }
-    }
-
     val notificationsEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[NOTIFICATIONS_ENABLED_KEY]?.toBoolean() ?: false
     }
@@ -372,27 +334,24 @@ class PreferencesManager @Inject constructor(
         context.getSharedPreferences("schedule_cache", Context.MODE_PRIVATE)
     }
 
-    private val _notesPrefs: SharedPreferences by lazy {
-        createEncryptedPrefsSafely("secret_notes")
+    // Локальный кэш ссылок на пары, которые мы вытянули из API МКР (/time-table/schedule-ad)
+    private val _apiLinksPrefs: SharedPreferences by lazy {
+        context.getSharedPreferences("api_lesson_links", Context.MODE_PRIVATE)
     }
 
     fun getScheduleCachePrefs(): SharedPreferences {
         return _scheduleCachePrefs
     }
 
-    fun getNotesPrefs(): SharedPreferences {
-        return _notesPrefs
+    fun getApiLinksPrefs(): SharedPreferences {
+        return _apiLinksPrefs
     }
 
-    fun saveNote(lessonKey: String, note: String) {
-        if (note.isBlank()) {
-            getNotesPrefs().edit().remove(lessonKey).apply()
+    fun saveApiLessonLink(key: String, url: String) {
+        if (url.isBlank()) {
+            _apiLinksPrefs.edit().remove(key).apply()
         } else {
-            getNotesPrefs().edit().putString(lessonKey, note).apply()
+            _apiLinksPrefs.edit().putString(key, url.trim()).apply()
         }
-    }
-
-    fun getNote(lessonKey: String): String? {
-        return getNotesPrefs().getString(lessonKey, null)
     }
 }

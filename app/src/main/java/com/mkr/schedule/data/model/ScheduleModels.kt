@@ -52,3 +52,15 @@ data class CallSchedule(
     val length: Double
 )
 
+// Запрос объявления к конкретной паре (по коду занятия r1 и дате r2)
+data class ScheduleAdForm(
+    @SerializedName("r1") val r1: Int,
+    @SerializedName("r2") val r2: String
+)
+
+// Ответ МКР с HTML-объявлением от преподавателя (обычно тут лежит ссылка на Zoom/Meet)
+data class ScheduleAdResponse(
+    @SerializedName("html") val html: String?
+)
+
+

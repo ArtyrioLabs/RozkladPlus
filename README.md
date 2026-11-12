@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Design-Material_3_Expressive-8AB4F8?style=flat-square&logo=materialdesign&logoColor=white" alt="Material 3 Expressive" />
   <img src="https://img.shields.io/badge/Language-Kotlin_2.0-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" />
   <img src="https://img.shields.io/badge/UI-Jetpack_Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Compose" />
-  <img src="https://img.shields.io/badge/Version-v1.8.5-blue?style=flat-square" alt="Version 1.8.5" />
+  <img src="https://img.shields.io/badge/Version-v1.8.7-blue?style=flat-square" alt="Version 1.8.7" />
   <img src="https://img.shields.io/badge/License-Apache_2.0-lightgrey?style=flat-square" alt="License" />
 </p>
 
@@ -30,7 +30,7 @@
 
 ### Інтелектуальний розклад та перерви
 - **Аналіз вікон**: автоматичний підрахунок тривалості великих перерв і вільних вікон між парами із зазначенням часу до початку наступного заняття.
-- **Smart Chips у нотатках**: автодетекція посилань на зустрічі (Zoom, Google Meet, Teams, Telegram, Google Drive, Classroom) з переходом в один клік, а також виявлення дедлайнів і заліків.
+- **Прямі посилання на онлайн-пари**: автоматичне отримання посилань на відеоконференції (Zoom, Google Meet, MS Teams, Moodle) напряму з оголошень розкладу університету з миттєвим переходом за натисканням на картку заняття.
 
 ### Віджет робочого столу (Jetpack Glance)
 - Сучасний віджет у стилі системних інформерів Google Pixel.
@@ -39,9 +39,6 @@
 ### Сповіщення та живий таймер
 - Попередження за 15 та 5 хвилин до пари через енергоефективний `ExactAlarmScheduler`.
 - Живий статус у шторці з таймером зворотного відліку до кінця поточної пари без зайвого споживання батареї.
-
-### Супутник Wear OS
-- Спеціальний клієнт для смарт-годинників на базі Wear OS із підтримкою апаратної прокрутки безелем/коронкою (Rotary Crown) та передачею даних через Wearable Data Layer. Модуль готується до публікації в наступних оновленнях.
 
 ### Надійність та приватність
 - **Повна автономність (Offline-first)**: збереження локального кэшу розкладу — додаток функціонує навіть за повної відсутності зв'язку.
@@ -59,7 +56,6 @@
 - **DI**: Dagger Hilt
 - **Мережа**: Retrofit 2, OkHttp 4, Gson
 - **Фонові процеси**: WorkManager, Foreground Services, Exact Alarm Manager
-- **Синхронізація годинника**: Google Play Services Wearable API
 
 ---
 

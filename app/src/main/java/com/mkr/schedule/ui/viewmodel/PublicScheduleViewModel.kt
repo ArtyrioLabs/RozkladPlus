@@ -62,8 +62,9 @@ class PublicScheduleViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(PublicScheduleUiState())
     val uiState: StateFlow<PublicScheduleUiState> = _uiState.asStateFlow()
 
-    private val _notesMap = MutableStateFlow<Map<String, String>>(emptyMap())
-    val notesMap: StateFlow<Map<String, String>> = _notesMap.asStateFlow()
+    // Карта ссылок на онлайн-пары, вытянутых напрямую из объявлений МКР (/time-table/schedule-ad)
+    private val _lessonLinksMap = MutableStateFlow<Map<String, String>>(emptyMap())
+    val lessonLinksMap: StateFlow<Map<String, String>> = _lessonLinksMap.asStateFlow()
 
     private val _isChillModeEnabled = MutableStateFlow(false)
     val isChillModeEnabled: StateFlow<Boolean> = _isChillModeEnabled
@@ -79,14 +80,14 @@ class PublicScheduleViewModel @Inject constructor(
     init {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val allNotes = preferencesManager.getNotesPrefs().all
+                val cachedLinks = preferencesManager.getApiLinksPrefs().all
                 val mapped = mutableMapOf<String, String>()
-                for ((k, v) in allNotes) {
-                    if (v is String) mapped[k] = v
+                for ((k, v) in cachedLinks) {
+                    if (v is String && v.isNotBlank()) mapped[k] = v
                 }
-                _notesMap.value = mapped
+                _lessonLinksMap.value = mapped
             } catch (e: Exception) {
-                LogCollector.log("PublicScheduleViewModel", "Failed to load notes into memory: ${e.message}")
+                LogCollector.log("PublicScheduleViewModel", "Failed to load cached API links: ${e.message}")
             }
         }
 
@@ -753,6 +754,8 @@ class PublicScheduleViewModel @Inject constructor(
                         currentWeekOffset = weekOffset
                     )
 
+                    prefetchScheduleAds(filteredAndSorted)
+
                     if (isFirstLoad) {
                         saveScheduleToCache(newSchedule)
                     }
@@ -766,12 +769,14 @@ class PublicScheduleViewModel @Inject constructor(
             } catch (e: Exception) {
                 val cached = if (isFirstLoad) getScheduleFromCache() else null
                 if (cached != null && cached.isNotEmpty()) {
+                    val sortedCached = filterAndSortSchedule(cached)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoadingMore = false,
-                        schedule = filterAndSortSchedule(cached),
+                        schedule = sortedCached,
                         error = "Офлайн режим (Дані з кешу)"
                     )
+                    prefetchScheduleAds(sortedCached)
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -838,6 +843,8 @@ class PublicScheduleViewModel @Inject constructor(
                         error = errorMessage
                     )
 
+                    prefetchScheduleAds(filteredAndSorted)
+
                     if (isFirstLoad && newSchedule.isNotEmpty()) {
                         saveScheduleToCache(newSchedule)
                     }
@@ -852,12 +859,14 @@ class PublicScheduleViewModel @Inject constructor(
             } catch (e: Exception) {
                 val cached = if (isFirstLoad) getScheduleFromCache() else null
                 if (cached != null && cached.isNotEmpty()) {
+                    val sortedCached = filterAndSortSchedule(cached)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoadingMore = false,
-                        schedule = filterAndSortSchedule(cached),
+                        schedule = sortedCached,
                         error = "Офлайн режим (Дані з кешу)"
                     )
+                    prefetchScheduleAds(sortedCached)
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -888,22 +897,130 @@ class PublicScheduleViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    suspend fun getConferenceLink(groupId: Int, disciplineId: Int?): String? {
-        return preferencesManager.getConferenceLink(groupId, disciplineId)
+    // Регулярки для поиска ссылок внутри HTML-объявлений от преподавателей (href="..." или просто ссылка в тексте)
+    private val hrefUrlRegex = Regex("""href\s*=\s*["'](https?://[^"'\s>]+)["']""", RegexOption.IGNORE_CASE)
+    private val plainUrlRegex = Regex(
+        """(?:https?://[^\s"'<>);,]+)|(?:(?:meet\.google\.com|zoom\.us|us\d+web\.zoom\.us|teams\.microsoft\.com|teams\.live\.com|t\.me|telegram\.me|drive\.google\.com|docs\.google\.com|classroom\.google\.com|dl\.knute\.edu\.ua)/[^\s"'<>);,]*)""",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun extractConferenceUrl(rawText: String?): String? {
+        if (rawText.isNullOrBlank()) return null
+        val unescaped = rawText
+            .replace("&amp;", "&")
+            .replace("&#38;", "&")
+
+        val fromHref = hrefUrlRegex.find(unescaped)?.groupValues?.getOrNull(1)
+        if (!fromHref.isNullOrBlank()) {
+            return fromHref.trimEnd('.', ',', ';', ')')
+        }
+
+        val fromText = plainUrlRegex.find(unescaped)?.value
+        if (!fromText.isNullOrBlank()) {
+            val cleaned = fromText.trimEnd('.', ',', ';', ')')
+            return if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) {
+                cleaned
+            } else {
+                "https://$cleaned"
+            }
+        }
+        return null
     }
 
-    fun getConferenceLinkFlow(groupId: Int, disciplineId: Int?) =
-        preferencesManager.getConferenceLinkFlow(groupId, disciplineId)
+    // В фоне проходимся по парам, у которых стоит флаг extraText, и вытягиваем ссылки из /time-table/schedule-ad
+    private fun prefetchScheduleAds(schedule: List<TimeTableDate>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            for (day in schedule) {
+                val cleanDate = day.date.take(10)
+                for (lesson in day.lessons) {
+                    for (period in lesson.periods) {
+                        // На случай, если ссылку вписали прямо в поле аудитории или названия дисциплины
+                        val inlineUrl = extractConferenceUrl(period.classroom)
+                            ?: extractConferenceUrl(period.disciplineFullName)
+                        if (inlineUrl != null) {
+                            val r1 = period.r1
+                            if (r1 != null) {
+                                cacheLessonLink("r1_${r1}_$cleanDate", inlineUrl, period.disciplineId)
+                            } else if (period.disciplineId != null) {
+                                cacheLessonLink("disc_${period.disciplineId}", inlineUrl, period.disciplineId)
+                            }
+                            continue
+                        }
 
-    fun saveConferenceLink(groupId: Int, disciplineId: Int?, link: String) {
-        viewModelScope.launch {
-            preferencesManager.saveConferenceLink(groupId, disciplineId, link)
+                        val r1 = period.r1 ?: continue
+                        if (period.extraText != true) continue
+
+                        val adKey = "r1_${r1}_$cleanDate"
+                        if (_lessonLinksMap.value.containsKey(adKey)) continue
+
+                        try {
+                            val response = currentApiService.getScheduleAd(
+                                token = "",
+                                form = ScheduleAdForm(r1 = r1, r2 = cleanDate)
+                            )
+                            if (response.isSuccessful) {
+                                val html = response.body()?.html
+                                val extractedUrl = extractConferenceUrl(html)
+                                if (!extractedUrl.isNullOrBlank()) {
+                                    cacheLessonLink(adKey, extractedUrl, period.disciplineId)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            LogCollector.log("PublicScheduleVM", "Не вдалося підтягнути оголошення для r1=$r1: ${e.message}")
+                        }
+                    }
+                }
+            }
         }
     }
 
-    fun deleteConferenceLink(groupId: Int, disciplineId: Int?) {
-        viewModelScope.launch {
-            preferencesManager.deleteConferenceLink(groupId, disciplineId)
+    private fun cacheLessonLink(adKey: String, url: String, disciplineId: Int?) {
+        preferencesManager.saveApiLessonLink(adKey, url)
+        val updated = _lessonLinksMap.value.toMutableMap()
+        updated[adKey] = url
+        if (disciplineId != null && disciplineId > 0 && !updated.containsKey("disc_$disciplineId")) {
+            preferencesManager.saveApiLessonLink("disc_$disciplineId", url)
+            updated["disc_$disciplineId"] = url
+        }
+        _lessonLinksMap.value = updated
+    }
+
+    // Если пользователь нажал на пару, а ссылка ещё не успела подгрузиться — пробуем достать её прямо сейчас
+    suspend fun fetchLessonLinkIfNeeded(period: TimeTablePeriod, date: String): String? {
+        val cleanDate = date.take(10)
+        val r1 = period.r1
+        val adKey = if (r1 != null) "r1_${r1}_$cleanDate" else null
+        val discKey = period.disciplineId?.let { "disc_$it" }
+
+        val currentMap = _lessonLinksMap.value
+        if (adKey != null && !currentMap[adKey].isNullOrBlank()) return currentMap[adKey]
+        if (discKey != null && !currentMap[discKey].isNullOrBlank()) return currentMap[discKey]
+
+        val inlineUrl = extractConferenceUrl(period.classroom)
+            ?: extractConferenceUrl(period.disciplineFullName)
+        if (!inlineUrl.isNullOrBlank()) {
+            if (adKey != null) cacheLessonLink(adKey, inlineUrl, period.disciplineId)
+            return inlineUrl
+        }
+
+        if (r1 == null) return null
+
+        return try {
+            val response = currentApiService.getScheduleAd(
+                token = "",
+                form = ScheduleAdForm(r1 = r1, r2 = cleanDate)
+            )
+            if (response.isSuccessful) {
+                val extractedUrl = extractConferenceUrl(response.body()?.html)
+                if (!extractedUrl.isNullOrBlank() && adKey != null) {
+                    cacheLessonLink(adKey, extractedUrl, period.disciplineId)
+                }
+                extractedUrl
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -997,21 +1114,6 @@ class PublicScheduleViewModel @Inject constructor(
                 LogCollector.log("PublicScheduleViewModel", "Error saving schedule: ${e.message}")
             }
         }
-    }
-
-    fun saveNote(lessonKey: String, note: String) {
-        preferencesManager.saveNote(lessonKey, note)
-        val currentMap = _notesMap.value.toMutableMap()
-        if (note.isBlank()) {
-            currentMap.remove(lessonKey)
-        } else {
-            currentMap[lessonKey] = note
-        }
-        _notesMap.value = currentMap
-    }
-
-    fun getNote(lessonKey: String): String? {
-        return _notesMap.value[lessonKey]
     }
 
     private fun getScheduleFromCache(): List<TimeTableDate>? {
