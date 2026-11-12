@@ -167,37 +167,68 @@ object UpdateManager {
                 val targetFile = File(dir, "rozklad-plus-update.apk")
                 if (targetFile.exists()) targetFile.delete()
 
-                val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 10_000
-                    readTimeout = 30_000
-                    requestMethod = "GET"
-                }
-
-                val totalBytes = conn.contentLength.coerceAtLeast(1)
-                var downloadedBytes = 0
+                // Качаем с поддержкой докачки (Range), чтобы при сворачивании приложения или скачке сети загрузка не падала с connection abort
+                var downloadedBytes = 0L
+                var totalBytes = -1L
                 var lastNotifPercent = -1
+                var attempt = 0
+                val maxAttempts = 5
 
-                conn.inputStream.use { input ->
-                    FileOutputStream(targetFile).use { output ->
-                        val buffer = ByteArray(16 * 1024)
-                        var read: Int
-                        while (input.read(buffer).also { read = it } != -1) {
-                            output.write(buffer, 0, read)
-                            downloadedBytes += read
-                            val percent = ((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100)
-                            if (percent - lastNotifPercent >= 10) {
-                                lastNotifPercent = percent
-                                val progressNotif = NotificationCompat.Builder(appContext, OTA_CHANNEL_ID)
-                                    .setSmallIcon(R.drawable.ic_stat_mkr)
-                                    .setContentTitle("Завантаження Розклад+")
-                                    .setContentText("$percent%")
-                                    .setOnlyAlertOnce(true)
-                                    .setOngoing(true)
-                                    .build()
-                                nm.notify(OTA_NOTIFICATION_ID, progressNotif)
+                while (attempt < maxAttempts) {
+                    try {
+                        val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                            instanceFollowRedirects = true
+                            connectTimeout = 15_000
+                            readTimeout = 30_000
+                            requestMethod = "GET"
+                            setRequestProperty("User-Agent", "RozkladPlus-Android/${BuildConfig.VERSION_NAME}")
+                            if (downloadedBytes > 0L) {
+                                setRequestProperty("Range", "bytes=$downloadedBytes-")
                             }
                         }
-                        output.flush()
+
+                        val code = conn.responseCode
+                        val isResume = code == HttpURLConnection.HTTP_PARTIAL && downloadedBytes > 0L
+                        if (!isResume) {
+                            downloadedBytes = 0L
+                            val contentLen = conn.contentLengthLong
+                            if (contentLen > 0L) totalBytes = contentLen
+                        } else if (totalBytes <= 0L) {
+                            val contentLen = conn.contentLengthLong
+                            if (contentLen > 0L) totalBytes = downloadedBytes + contentLen
+                        }
+
+                        conn.inputStream.use { input ->
+                            FileOutputStream(targetFile, isResume).use { output ->
+                                val buffer = ByteArray(32 * 1024)
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    output.write(buffer, 0, read)
+                                    downloadedBytes += read
+                                    val denom = if (totalBytes > 0L) totalBytes else 1L
+                                    val percent = ((downloadedBytes * 100L) / denom).toInt().coerceIn(0, 100)
+                                    if (percent - lastNotifPercent >= 5) {
+                                        lastNotifPercent = percent
+                                        val progressNotif = NotificationCompat.Builder(appContext, OTA_CHANNEL_ID)
+                                            .setSmallIcon(R.drawable.ic_stat_mkr)
+                                            .setContentTitle("Завантаження Розклад+")
+                                            .setContentText("$percent%")
+                                            .setProgress(100, percent, false)
+                                            .setOnlyAlertOnce(true)
+                                            .setOngoing(true)
+                                            .build()
+                                        nm.notify(OTA_NOTIFICATION_ID, progressNotif)
+                                    }
+                                }
+                                output.flush()
+                            }
+                        }
+                        break
+                    } catch (ioEx: Exception) {
+                        attempt++
+                        LogCollector.log("UpdateManager", "Спроба завантаження #$attempt перервана (${ioEx.message}), докачуємо з $downloadedBytes байт")
+                        if (attempt >= maxAttempts) throw ioEx
+                        kotlinx.coroutines.delay(1_200L)
                     }
                 }
 
