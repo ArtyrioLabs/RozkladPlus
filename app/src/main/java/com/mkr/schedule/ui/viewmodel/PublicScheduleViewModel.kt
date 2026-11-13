@@ -758,6 +758,7 @@ class PublicScheduleViewModel @Inject constructor(
 
                     if (isFirstLoad) {
                         saveScheduleToCache(newSchedule)
+                        ensureFutureWeeksLoaded()
                     }
                 } else {
                     _uiState.value = _uiState.value.copy(
@@ -874,6 +875,57 @@ class PublicScheduleViewModel @Inject constructor(
                         error = "Помилка завантаження: ${e.message}"
                     )
                 }
+            }
+        }
+    }
+
+    private var isPrefetchingFutureWeeks = false
+
+    fun ensureFutureWeeksLoaded(targetMaxOffset: Int = 8) {
+        if (isPrefetchingFutureWeeks) return
+        val startOffset = _uiState.value.currentWeekOffset
+        if (startOffset >= targetMaxOffset) return
+
+        val selectedStudent = _uiState.value.selectedStudent
+        val selectedGroup = _uiState.value.selectedGroup
+        if (selectedStudent == null && selectedGroup == null) return
+
+        isPrefetchingFutureWeeks = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                var offset = startOffset + 2
+                var accumulated = _uiState.value.schedule
+
+                while (offset <= targetMaxOffset) {
+                    val calendar = Calendar.getInstance()
+                    calendar.add(Calendar.WEEK_OF_YEAR, offset)
+                    val dateStart = dateFormat.format(calendar.time)
+                    calendar.add(Calendar.DAY_OF_YEAR, 14)
+                    val dateEnd = dateFormat.format(calendar.time)
+
+                    val body = if (selectedStudent != null) {
+                        currentApiService.getStudentTimeTable("", StudentTimeTableForm(selectedStudent.id, dateStart, dateEnd)).body()
+                    } else if (selectedGroup != null) {
+                        currentApiService.getGroupTimeTable("", GroupTimeTableForm(selectedGroup.id, dateStart, dateEnd)).body()
+                    } else null
+
+                    if (!body.isNullOrEmpty()) {
+                        accumulated = (accumulated + body).distinctBy { it.date }
+                        val sorted = filterAndSortSchedule(accumulated)
+                        _uiState.value = _uiState.value.copy(
+                            schedule = sorted,
+                            currentWeekOffset = offset
+                        )
+                        prefetchScheduleAds(body)
+                    } else {
+                        _uiState.value = _uiState.value.copy(currentWeekOffset = offset)
+                    }
+                    offset += 2
+                }
+            } catch (_: Exception) {
+            } finally {
+                isPrefetchingFutureWeeks = false
             }
         }
     }

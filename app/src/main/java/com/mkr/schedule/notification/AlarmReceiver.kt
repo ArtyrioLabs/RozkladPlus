@@ -17,6 +17,16 @@ class AlarmReceiver : BroadcastReceiver() {
         val lessonNumber = intent.getIntExtra("lessonNumber", 0)
         val lessonType = intent.getStringExtra("lessonType") ?: "Пара"
         val minutesBefore = intent.getIntExtra("minutesBefore", 15)
+        val r1 = intent.getIntExtra("r1", -1)
+        val disciplineId = intent.getIntExtra("disciplineId", -1)
+
+        // Если ссылка не пришла в Intent (например, подгрузилась позже), берём из кэша
+        var conferenceLink = intent.getStringExtra("conferenceLink")?.takeIf { it.isNotBlank() }
+        if (conferenceLink == null && (r1 > 0 || disciplineId > 0)) {
+            val apiLinksPrefs = context.getSharedPreferences("api_lesson_links", Context.MODE_PRIVATE)
+            conferenceLink = (if (r1 > 0) apiLinksPrefs.getString("r1_${r1}_$lessonDate", null) else null)
+                ?: (if (disciplineId > 0) apiLinksPrefs.getString("disc_$disciplineId", null) else null)
+        }
 
         LogCollector.log("AlarmReceiver", "Received alarm trigger for $subject ($minutesBefore mins before)")
 
@@ -31,6 +41,9 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("teacher", teacher)
                 putExtra("start_time", startTime)
                 putExtra("end_time", endTime)
+                if (!conferenceLink.isNullOrBlank()) {
+                    putExtra("conference_link", conferenceLink)
+                }
             }
             try {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -50,7 +63,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 endTime = endTime,
                 lessonNumber = lessonNumber,
                 lessonType = lessonType,
-                lessonDate = lessonDate
+                lessonDate = lessonDate,
+                conferenceLink = conferenceLink
             )
             return
         }
@@ -65,7 +79,8 @@ class AlarmReceiver : BroadcastReceiver() {
             lessonNumber = lessonNumber,
             lessonType = lessonType,
             reminderMinutes = minutesBefore,
-            lessonDate = lessonDate
+            lessonDate = lessonDate,
+            conferenceLink = conferenceLink
         )
     }
 }

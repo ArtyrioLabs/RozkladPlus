@@ -189,6 +189,17 @@ interface Strings {
     val share: String
     val shareLogs: String
     val logsReadySnackbar: String
+    val exam: String
+    val credit: String
+    val consultation: String
+    val nowOngoing: String
+    val nextClassIn: String
+    val leftMinutesShort: String
+    val filterAll: String
+    val filterExams: String
+    val todayJump: String
+    val noExamsFound: String
+    val addToCalendar: String
 
     fun formatPairsCount(count: Int): String
     fun formatWindowWithPairs(count: Int): String
@@ -356,6 +367,17 @@ object UkrainianStrings : Strings {
     override val share = "Поділитися"
     override val shareLogs = "Поділитися логами"
     override val logsReadySnackbar = "Логи підготовлено"
+    override val exam = "Екзамен"
+    override val credit = "Залік"
+    override val consultation = "Консультація"
+    override val nowOngoing = "Зараз іде"
+    override val nextClassIn = "Наступна через"
+    override val leftMinutesShort = "хв"
+    override val filterAll = "Усі"
+    override val filterExams = "Екзамени"
+    override val todayJump = "Сьогодні"
+    override val noExamsFound = "У цьому періоді екзаменів не знайдено"
+    override val addToCalendar = "У календар"
 
     override fun formatPairsCount(count: Int): String {
         val rem100 = count % 100
@@ -550,6 +572,17 @@ object EnglishStrings : Strings {
     override val share = "Share"
     override val shareLogs = "Share diagnostic logs"
     override val logsReadySnackbar = "Logs prepared"
+    override val exam = "Exam"
+    override val credit = "Credit"
+    override val consultation = "Consultation"
+    override val nowOngoing = "Happening now"
+    override val nextClassIn = "Next in"
+    override val leftMinutesShort = "min"
+    override val filterAll = "All"
+    override val filterExams = "Exams"
+    override val todayJump = "Today"
+    override val noExamsFound = "No exams found in this period"
+    override val addToCalendar = "Calendar"
 
     override fun formatPairsCount(count: Int): String {
         return "$count ${if (count == 1) "class" else "classes"}"

@@ -8,6 +8,7 @@ package com.mkr.schedule.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.CalendarContract
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -26,12 +27,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Class
 import androidx.compose.material.icons.filled.Close
@@ -57,6 +60,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
@@ -67,6 +71,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,10 +87,12 @@ import com.mkr.schedule.util.localization.LocalStrings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 import java.util.*
 
 @Composable
@@ -103,6 +110,7 @@ fun PublicScheduleScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showResetConfirmation by remember { mutableStateOf(false) }
     var isGridView by rememberSaveable { mutableStateOf(false) }
+    var showExamsOnly by rememberSaveable { mutableStateOf(false) }
     var universitySearchQuery by rememberSaveable { mutableStateOf("") }
     var studentSearchQuery by rememberSaveable { mutableStateOf("") }
 
@@ -137,6 +145,92 @@ fun PublicScheduleScreen(
 
     val liveProgressStats = remember(uiState.schedule, progressNow) {
         calculateScheduleProgress(uiState.schedule, progressNow)
+    }
+
+    val todayIso = remember(progressNow) {
+        progressNow.toLocalDate().toString()
+    }
+    val availableWeeks = remember(uiState.schedule) {
+        uiState.schedule.mapNotNull { day ->
+            runCatching {
+                LocalDate.parse(day.date.take(10)).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            }.getOrNull()
+        }.distinct().sorted()
+    }
+    var selectedWeekIndex by rememberSaveable { mutableStateOf(0) }
+    var pendingAdvanceToNextWeek by remember { mutableStateOf(false) }
+
+    LaunchedEffect(availableWeeks, todayIso) {
+        if (availableWeeks.isEmpty()) {
+            selectedWeekIndex = 0
+        } else if (pendingAdvanceToNextWeek) {
+            selectedWeekIndex = availableWeeks.lastIndex
+            pendingAdvanceToNextWeek = false
+        } else if (selectedWeekIndex !in availableWeeks.indices) {
+            val todayMonday = runCatching {
+                LocalDate.parse(todayIso).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            }.getOrNull()
+            val todayIdx = if (todayMonday != null) availableWeeks.indexOf(todayMonday) else -1
+            selectedWeekIndex = if (todayIdx >= 0) todayIdx else 0
+        }
+    }
+
+    val currentWeekStart = availableWeeks.getOrNull(selectedWeekIndex)
+
+    val assessmentCount = remember(uiState.schedule, strings) {
+        uiState.schedule.sumOf { day ->
+            day.lessons.sumOf { lesson ->
+                lesson.periods.count { p ->
+                    val s = strings.translateDiscipline(p.disciplineShortName?.trim())
+                    val f = strings.translateDiscipline(p.disciplineFullName?.trim())
+                    val kind = resolveLessonKind(p, s, f)
+                    kind == LessonKind.EXAM || kind == LessonKind.CREDIT || kind == LessonKind.CONSULTATION
+                }
+            }
+        }
+    }
+    val displayedSchedule = remember(uiState.schedule, showExamsOnly, currentWeekStart, strings) {
+        val raw = if (showExamsOnly) {
+            uiState.schedule.mapNotNull { day ->
+                val examLessons = day.lessons.mapNotNull { lesson ->
+                    val matchingPeriods = lesson.periods.filter { p ->
+                        val s = strings.translateDiscipline(p.disciplineShortName?.trim())
+                        val f = strings.translateDiscipline(p.disciplineFullName?.trim())
+                        val kind = resolveLessonKind(p, s, f)
+                        kind == LessonKind.EXAM || kind == LessonKind.CREDIT || kind == LessonKind.CONSULTATION
+                    }
+                    if (matchingPeriods.isNotEmpty()) lesson.copy(periods = matchingPeriods) else null
+                }
+                if (examLessons.isNotEmpty()) day.copy(lessons = examLessons) else null
+            }
+        } else if (currentWeekStart != null) {
+            val weekEnd = currentWeekStart.plusDays(6)
+            uiState.schedule.filter { day ->
+                val d = runCatching { LocalDate.parse(day.date.take(10)) }.getOrNull()
+                d != null && !d.isBefore(currentWeekStart) && !d.isAfter(weekEnd)
+            }
+        } else {
+            uiState.schedule
+        }
+        raw.distinctBy { it.date.take(10) }
+    }
+    val todayMonday = remember(todayIso) {
+        runCatching {
+            LocalDate.parse(todayIso).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        }.getOrNull()
+    }
+    val todayWeekIndex = remember(availableWeeks, todayMonday) {
+        if (todayMonday != null) availableWeeks.indexOf(todayMonday) else -1
+    }
+
+    LaunchedEffect(showExamsOnly) {
+        if (showExamsOnly) {
+            viewModel.ensureFutureWeeksLoaded()
+        }
+    }
+
+    val todayIndexInDisplayed = remember(displayedSchedule, todayIso) {
+        displayedSchedule.indexOfFirst { it.date.take(10) == todayIso }
     }
 
     LaunchedEffect(uiState.selectedGroup?.id) {
@@ -655,15 +749,93 @@ fun PublicScheduleScreen(
                                     )
                                 }
                             } else if (uiState.schedule.isNotEmpty()) {
+                                item(key = "schedule_filter_bar") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 2.dp, bottom = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        FilterChip(
+                                            selected = !showExamsOnly,
+                                            onClick = { showExamsOnly = false },
+                                            shape = CircleShape,
+                                            label = { Text(strings.filterAll) }
+                                        )
+                                        FilterChip(
+                                            selected = showExamsOnly,
+                                            onClick = {
+                                                showExamsOnly = true
+                                                viewModel.ensureFutureWeeksLoaded()
+                                            },
+                                            shape = CircleShape,
+                                            label = {
+                                                val suffix = if (assessmentCount > 0) " ($assessmentCount)" else ""
+                                                Text("${strings.filterExams}$suffix")
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        if (!showExamsOnly && currentWeekStart != null) {
+                                            CompactWeekSwitcherPill(
+                                                weekStart = currentWeekStart,
+                                                canGoPrev = selectedWeekIndex > 0,
+                                                isLoadingNext = uiState.isLoading && pendingAdvanceToNextWeek,
+                                                isCurrentWeek = selectedWeekIndex == todayWeekIndex,
+                                                onPrevWeek = {
+                                                    if (selectedWeekIndex > 0) {
+                                                        selectedWeekIndex -= 1
+                                                    }
+                                                },
+                                                onNextWeek = {
+                                                    if (selectedWeekIndex < availableWeeks.lastIndex) {
+                                                        selectedWeekIndex += 1
+                                                    } else if (!uiState.isLoading) {
+                                                        pendingAdvanceToNextWeek = true
+                                                        viewModel.loadNextWeek()
+                                                    }
+                                                },
+                                                onJumpToday = {
+                                                    if (todayWeekIndex >= 0) {
+                                                        selectedWeekIndex = todayWeekIndex
+                                                    }
+                                                    coroutineScope.launch {
+                                                        listState.animateScrollToItem(1)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
                                 if (isGridView) {
                                     item(key = "grid_view") {
-                                        ScheduleGridView(schedule = uiState.schedule)
+                                        ScheduleGridView(schedule = displayedSchedule)
+                                    }
+                                } else if (displayedSchedule.isEmpty() && showExamsOnly) {
+                                    item(key = "empty_exams") {
+                                        Surface(
+                                            shape = RoundedCornerShape(22.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainer,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = strings.noExamsFound,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(20.dp)
+                                            )
+                                        }
                                     }
                                 } else {
-                                    itemsIndexed(
-                                        items = uiState.schedule,
-                                        key = { index, day -> "${day.date}_$index" }
-                                    ) { _, daySchedule ->
+                                    items(
+                                        items = displayedSchedule,
+                                        key = { day -> day.date.take(10) }
+                                    ) { daySchedule ->
                                         ModernDayScheduleCard(
                                             daySchedule = daySchedule,
                                             groupId = uiState.selectedGroup?.id ?: 0,
@@ -674,45 +846,6 @@ fun PublicScheduleScreen(
                             }
                         }
                     }
-                }
-
-                // Load Next 2 Weeks Extended FAB (clean, no infinite pulse)
-                AnimatedVisibility(
-                    visible = showLoadMoreButton && !uiState.isLoadingMore && !uiState.isLoading && uiState.selectedGroup != null,
-                    enter = slideInVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()) { it } +
-                        fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
-                    exit = slideOutVertically(animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()) { it } +
-                        fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 20.dp)
-                ) {
-                    ExtendedFloatingActionButton(
-                        onClick = {
-                            try {
-                                if (!uiState.isLoadingMore && !uiState.isLoading) {
-                                    viewModel.loadNextWeek()
-                                }
-                            } catch (e: Exception) {
-                                LogCollector.log("PublicSchedule", "Error loading next week: ${e.message}")
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.ExpandMore,
-                                contentDescription = null
-                            )
-                        },
-                        text = {
-                            Text(
-                                text = "Наступні тижні",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
                 }
 
                 if (uiState.isLoadingMore) {
@@ -858,27 +991,38 @@ private fun ProfileDrawerContent(
         }
     }
 
-    val stats = remember(uiState.schedule, now) {
-        calculateScheduleProgress(uiState.schedule, now)
+    val todayIso = remember(now) { now.toLocalDate().toString() }
+    val todayPairsCount = remember(uiState.schedule, todayIso) {
+        uiState.schedule.firstOrNull { it.date.take(10) == todayIso }
+            ?.lessons?.sumOf { it.periods.size } ?: 0
     }
-    val progress = stats.progress
-    val effectiveXp = totalXp +
-        (stats.completedLessons - maxCompletedLessons).coerceAtLeast(0) * XP_PER_COMPLETED_LESSON
-    val levelProgress = calculateLevelProgress(effectiveXp)
+    val upcomingExamsCount = remember(uiState.schedule, strings) {
+        uiState.schedule.sumOf { day ->
+            day.lessons.sumOf { lesson ->
+                lesson.periods.count { p ->
+                    val s = strings.translateDiscipline(p.disciplineShortName?.trim())
+                    val f = strings.translateDiscipline(p.disciplineFullName?.trim())
+                    resolveLessonKind(p, s, f) == LessonKind.EXAM
+                }
+            }
+        }
+    }
 
     val profileTitle = when {
         uiState.selectedStudent != null -> uiState.selectedStudent.fullName
-        uiState.selectedGroup != null -> "${strings.groupPrefix} ${uiState.selectedGroup.name}"
+        uiState.selectedGroup != null -> uiState.selectedGroup.name
         else -> strings.noProfileSelected
     }
+    val uniName = uiState.selectedUniversity?.shortName?.takeIf { it.isNotBlank() }
 
-    val profileBadge = buildString {
-        uiState.selectedUniversity?.shortName?.let { append(it) }
-        uiState.selectedGroup?.name?.let {
-            if (isNotEmpty()) append(" • ")
-            append(it)
-        }
-    }.ifEmpty { "Розклад+" }
+    val currentTimeStr = remember(now) {
+        String.format(Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
+    }
+    val activeCallNumber = remember(callSchedule, currentTimeStr) {
+        callSchedule.firstOrNull { call ->
+            currentTimeStr in call.timeStart.take(5)..call.timeEnd.take(5)
+        }?.number
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -888,153 +1032,170 @@ private fun ProfileDrawerContent(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Profile Header Card (Material 3 Expressive)
+        // Компактная и чистая карточка профиля в единой палитре с главным экраном
         item(key = "drawer_profile_header") {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(26.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                tonalElevation = 2.dp
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f)
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(46.dp)
                         ) {
-                            Text(
-                                text = profileBadge,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.School,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
-                        if (isChillModeEnabled) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.tertiaryContainer
-                            ) {
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = profileTitle,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (uniName != null) {
                                 Text(
-                                    text = strings.formatLevel(levelProgress.level, effectiveXp),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    text = if (uiState.selectedStudent != null && uiState.selectedGroup != null) {
+                                        "$uniName • ${uiState.selectedGroup.name}"
+                                    } else {
+                                        uniName
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
                     }
 
-                    Text(
-                        text = profileTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                    if (uiState.schedule.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                            ) {
+                                Text(
+                                    text = "${strings.today}: ${if (todayPairsCount > 0) strings.formatPairsCount(todayPairsCount) else "—"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                            if (upcomingExamsCount > 0) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.errorContainer
+                                ) {
+                                    Text(
+                                        text = "${strings.filterExams}: $upcomingExamsCount",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Сгруппированные действия в стиле карточек расписания
+        item(key = "drawer_quick_actions") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = strings.quickActions,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 6.dp, bottom = 2.dp)
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    DrawerGroupedRow(
+                        title = if (isGridView) strings.viewDayList else strings.viewWeekGrid,
+                        icon = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
+                        isHighlighted = isGridView,
+                        shape = groupedListShape(0, 3),
+                        onClick = onToggleGridView
+                    )
+                    DrawerGroupedRow(
+                        title = strings.changeGroupOrUniversity,
+                        icon = Icons.Default.SwapHoriz,
+                        isHighlighted = false,
+                        shape = groupedListShape(1, 3),
+                        onClick = onChangeSchedule
+                    )
+                    DrawerGroupedRow(
+                        title = strings.settings,
+                        icon = Icons.Default.Settings,
+                        isHighlighted = false,
+                        shape = groupedListShape(2, 3),
+                        onClick = onOpenSettings
                     )
                 }
             }
         }
 
-        // Navigation & Quick Actions
-        item(key = "drawer_quick_actions") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = strings.quickActions,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
-                )
-
-                NavigationDrawerItem(
-                    label = {
-                        Text(
-                            text = if (isGridView) strings.viewDayList else strings.viewWeekGrid,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    },
-                    icon = {
-                        Icon(
-                            imageVector = if (isGridView) Icons.Default.List else Icons.Default.GridView,
-                            contentDescription = null
-                        )
-                    },
-                    selected = false,
-                    onClick = onToggleGridView,
-                    shape = RoundedCornerShape(18.dp),
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                )
-
-                NavigationDrawerItem(
-                    label = {
-                        Text(
-                            text = strings.changeGroupOrUniversity,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    },
-                    icon = {
-                        Icon(Icons.Default.SwapHoriz, contentDescription = null)
-                    },
-                    selected = false,
-                    onClick = onChangeSchedule,
-                    shape = RoundedCornerShape(18.dp),
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-
-                NavigationDrawerItem(
-                    label = {
-                        Text(
-                            text = strings.settings,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    },
-                    icon = {
-                        Icon(Icons.Default.Settings, contentDescription = null)
-                    },
-                    selected = false,
-                    onClick = onOpenSettings,
-                    shape = RoundedCornerShape(18.dp),
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unselectedIconColor = MaterialTheme.colorScheme.primary,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-            }
-        }
-
-        // Bell Schedule Grouped Container
+        // Расписание звонков
         item(key = "drawer_bell_header") {
-            Text(
-                text = strings.callSchedule,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 8.dp, top = 4.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = strings.callSchedule,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (activeCallNumber != null) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = strings.formatOrdinalClass(activeCallNumber),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            }
         }
 
         if (isLoadingCallSchedule) {
@@ -1042,31 +1203,30 @@ private fun ProfileDrawerContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 3.dp)
                 }
             }
         } else if (callSchedule.isEmpty()) {
             item(key = "drawer_bell_empty") {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     Text(
                         text = strings.bellScheduleUnavailable,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(14.dp)
                     )
                 }
             }
         } else {
-            val currentTimeStr = String.format(Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
             item(key = "drawer_bell_list") {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     callSchedule.forEachIndexed { index, call ->
                         val startClean = call.timeStart.take(5)
                         val endClean = call.timeEnd.take(5)
@@ -1077,15 +1237,18 @@ private fun ProfileDrawerContent(
                             modifier = Modifier.fillMaxWidth(),
                             shape = shape,
                             color = if (isCurrentBell) {
-                                MaterialTheme.colorScheme.primaryContainer
+                                MaterialTheme.colorScheme.surfaceContainerHighest
                             } else {
                                 MaterialTheme.colorScheme.surfaceContainerHigh
-                            }
+                            },
+                            border = if (isCurrentBell) {
+                                BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                            } else null
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1094,68 +1257,233 @@ private fun ProfileDrawerContent(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Surface(
-                                        shape = CircleShape,
+                                        shape = RoundedCornerShape(9.dp),
                                         color = if (isCurrentBell) {
                                             MaterialTheme.colorScheme.primary
                                         } else {
-                                            MaterialTheme.colorScheme.secondaryContainer
+                                            MaterialTheme.colorScheme.surfaceContainerHighest
                                         },
-                                        modifier = Modifier.size(26.dp)
+                                        modifier = Modifier.size(24.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
                                                 text = "${call.number}",
-                                                style = MaterialTheme.typography.labelMedium,
+                                                style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isCurrentBell) {
                                                     MaterialTheme.colorScheme.onPrimary
                                                 } else {
-                                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
                                                 }
                                             )
                                         }
                                     }
                                     Text(
                                         text = strings.formatOrdinalClass(call.number),
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.bodySmall,
                                         fontWeight = if (isCurrentBell) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isCurrentBell) {
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        }
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
 
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.Bottom
-                                ) {
-                                    Text(
-                                        text = startClean,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isCurrentBell) {
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        }
-                                    )
-                                    Text(
-                                        text = "– $endClean",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (isCurrentBell) {
-                                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.padding(bottom = 1.dp)
-                                    )
-                                }
+                                Text(
+                                    text = "$startClean – $endClean",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = if (isCurrentBell) FontWeight.Bold else FontWeight.SemiBold,
+                                    color = if (isCurrentBell) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawerGroupedRow(
+    title: String,
+    icon: ImageVector,
+    isHighlighted: Boolean,
+    shape: Shape,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.975f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "drawer_row_scale"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale),
+        onClick = onClick,
+        interactionSource = interactionSource,
+        shape = shape,
+        color = if (isHighlighted) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (isHighlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                },
+                modifier = Modifier.size(34.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (isHighlighted) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isHighlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = if (isHighlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.65f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                },
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DrawerBentoTile(
+    title: String,
+    icon: ImageVector,
+    containerColor: Color,
+    contentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconTint: Color = contentColor,
+    isCompactRow: Boolean = false
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "drawer_bento_scale"
+    )
+    val cornerRadius by animateDpAsState(
+        targetValue = if (isPressed) 14.dp else 22.dp,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "drawer_bento_corner"
+    )
+
+    Surface(
+        modifier = modifier.scale(scale),
+        onClick = onClick,
+        interactionSource = interactionSource,
+        shape = RoundedCornerShape(cornerRadius),
+        color = containerColor
+    ) {
+        if (isCompactRow) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = iconTint.copy(alpha = 0.14f),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = contentColor,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = contentColor.copy(alpha = 0.55f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = iconTint.copy(alpha = 0.14f),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -1656,10 +1984,276 @@ private fun retryCurrentStep(
     }
 }
 
+@Composable
+private fun CompactWeekSwitcherPill(
+    weekStart: LocalDate,
+    canGoPrev: Boolean,
+    isLoadingNext: Boolean,
+    isCurrentWeek: Boolean,
+    onPrevWeek: () -> Unit,
+    onNextWeek: () -> Unit,
+    onJumpToday: () -> Unit
+) {
+    val strings = LocalStrings.current
+    val currentLocale = remember(strings) {
+        if (strings is com.mkr.schedule.util.localization.EnglishStrings) Locale.ENGLISH else Locale("uk", "UA")
+    }
+    val shortFormatter = remember(currentLocale) { DateTimeFormatter.ofPattern("d MMM", currentLocale) }
+    val weekEnd = remember(weekStart) { weekStart.plusDays(6) }
+    val rangeLabel = remember(weekStart, weekEnd, currentLocale) {
+        val startMonth = weekStart.monthValue
+        val endMonth = weekEnd.monthValue
+        val endFormatted = weekEnd.format(shortFormatter).replace(".", "")
+        if (startMonth == endMonth) {
+            "${weekStart.dayOfMonth}–$endFormatted"
+        } else {
+            "${weekStart.format(shortFormatter).replace(".", "")} – $endFormatted"
+        }
+    }
+
+    Surface(
+        shape = CircleShape,
+        color = if (isCurrentWeek) {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+        ) {
+            IconButton(
+                onClick = onPrevWeek,
+                enabled = canGoPrev,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ChevronLeft,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (canGoPrev) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f)
+                    }
+                )
+            }
+
+            Text(
+                text = rangeLabel,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (isCurrentWeek) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                },
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onJumpToday)
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            )
+
+            IconButton(
+                onClick = onNextWeek,
+                enabled = !isLoadingNext,
+                modifier = Modifier.size(28.dp)
+            ) {
+                if (isLoadingNext) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
+}
+
 private data class FlatPeriodEntry(
     val lessonNumber: Int,
     val period: TimeTablePeriod
 )
+
+@Composable
+private fun LiveNowNextCard(
+    schedule: List<TimeTableDate>,
+    now: LocalDateTime
+) {
+    val strings = LocalStrings.current
+    val todayIso = remember(now) { now.toLocalDate().toString() }
+    val nowMinutes = remember(now) { now.hour * 60 + now.minute }
+
+    val todayPeriods = remember(schedule, todayIso) {
+        schedule.firstOrNull { it.date.take(10) == todayIso }
+            ?.lessons
+            ?.flatMap { it.periods }
+            .orEmpty()
+    }
+
+    val currentPeriod = remember(todayPeriods, nowMinutes) {
+        todayPeriods.firstOrNull { period ->
+            val start = parseTimeMinutes(period.timeStart) ?: return@firstOrNull false
+            val end = parseTimeMinutes(period.timeEnd) ?: return@firstOrNull false
+            nowMinutes in start..end
+        }
+    }
+
+    val nextPeriod = remember(todayPeriods, nowMinutes, currentPeriod) {
+        if (currentPeriod != null) {
+            null
+        } else {
+            todayPeriods
+                .mapNotNull { period ->
+                    val start = parseTimeMinutes(period.timeStart) ?: return@mapNotNull null
+                    if (start > nowMinutes) start to period else null
+                }
+                .minByOrNull { it.first }
+                ?.second
+        }
+    }
+
+    val targetPeriod = currentPeriod ?: nextPeriod ?: return
+
+    val shortName = remember(targetPeriod, strings) { strings.translateDiscipline(targetPeriod.disciplineShortName?.trim()) }
+    val fullName = remember(targetPeriod, strings) { strings.translateDiscipline(targetPeriod.disciplineFullName?.trim()) }
+    val title = remember(shortName, fullName, strings) {
+        when {
+            fullName.isNotEmpty() && fullName.length <= 54 -> fullName
+            shortName.isNotEmpty() -> shortName
+            fullName.isNotEmpty() -> fullName
+            else -> strings.disciplineFallback
+        }
+    }
+
+    val lessonKind = remember(targetPeriod, shortName, fullName) {
+        resolveLessonKind(targetPeriod, shortName, fullName)
+    }
+    val isExam = lessonKind == LessonKind.EXAM
+    val isOngoing = currentPeriod != null
+
+    val startMin = parseTimeMinutes(targetPeriod.timeStart) ?: 0
+    val endMin = parseTimeMinutes(targetPeriod.timeEnd) ?: 0
+    val minutesValue = if (isOngoing) {
+        (endMin - nowMinutes).coerceAtLeast(1)
+    } else {
+        (startMin - nowMinutes).coerceAtLeast(1)
+    }
+    val progress = if (isOngoing && endMin > startMin) {
+        ((nowMinutes - startMin).toFloat() / (endMin - startMin).toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+
+    val containerColor = when {
+        isExam -> MaterialTheme.colorScheme.errorContainer
+        isOngoing -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.secondaryContainer
+    }
+    val contentColor = when {
+        isExam -> MaterialTheme.colorScheme.onErrorContainer
+        isOngoing -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSecondaryContainer
+    }
+
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = containerColor,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = contentColor
+                    )
+                    Text(
+                        text = if (isOngoing) strings.nowOngoing else "${strings.nextClassIn} $minutesValue ${strings.leftMinutesShort}",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = contentColor
+                    )
+                }
+                val classroom = targetPeriod.classroom?.trim().orEmpty()
+                if (classroom.isNotEmpty()) {
+                    Text(
+                        text = classroom,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = contentColor.copy(alpha = 0.85f)
+                    )
+                }
+            }
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = contentColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val startStr = targetPeriod.timeStart?.take(5) ?: "--:--"
+                val endStr = targetPeriod.timeEnd?.take(5) ?: "--:--"
+                Text(
+                    text = "$startStr – $endStr",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contentColor.copy(alpha = 0.8f)
+                )
+                if (isOngoing) {
+                    Text(
+                        text = "$minutesValue ${strings.leftMinutesShort}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = contentColor
+                    )
+                }
+            }
+
+            if (isOngoing) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = contentColor,
+                    trackColor = contentColor.copy(alpha = 0.22f)
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun ModernDayScheduleCard(
@@ -1694,6 +2288,21 @@ fun ModernDayScheduleCard(
         }
     }
 
+    val dayNumberFormat = remember(currentLocale) { SimpleDateFormat("d", currentLocale) }
+    val shortMonthFormat = remember(currentLocale) { SimpleDateFormat("MMM", currentLocale) }
+    val dayTimeSpan = remember(flatPeriods) {
+        val firstStart = flatPeriods.firstOrNull()?.period?.timeStart?.take(5)
+        val lastEnd = flatPeriods.lastOrNull()?.period?.timeEnd?.take(5)
+        if (!firstStart.isNullOrBlank() && !lastEnd.isNullOrBlank()) "$firstStart – $lastEnd" else null
+    }
+    val hasExamInDay = remember(flatPeriods, strings) {
+        flatPeriods.any { entry ->
+            val shortName = strings.translateDiscipline(entry.period.disciplineShortName?.trim())
+            val fullName = strings.translateDiscipline(entry.period.disciplineFullName?.trim())
+            resolveLessonKind(entry.period, shortName, fullName) == LessonKind.EXAM
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1714,17 +2323,48 @@ fun ModernDayScheduleCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(38.dp)
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isToday) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    modifier = Modifier.size(44.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarToday,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = if (isToday) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (date != null) {
+                        val badgeFg = if (isToday) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = dayNumberFormat.format(date),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = badgeFg,
+                                lineHeight = MaterialTheme.typography.titleMedium.lineHeight * 0.9f
+                            )
+                            Text(
+                                text = shortMonthFormat.format(date).replace(".", "").uppercase(currentLocale).take(3),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = badgeFg.copy(alpha = 0.82f)
+                            )
+                        }
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (isToday) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 Column {
@@ -1767,17 +2407,29 @@ fun ModernDayScheduleCard(
                 }
             }
 
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(
-                    text = strings.formatPairsCount(flatPeriods.size),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Text(
+                        text = strings.formatPairsCount(flatPeriods.size),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+                if (dayTimeSpan != null) {
+                    Text(
+                        text = dayTimeSpan,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                }
             }
         }
 
@@ -1987,26 +2639,38 @@ fun ModernLessonCard(
             classroom.contains("ДИСТАНЦ", ignoreCase = true)
     }
 
+    val isExam = lessonKind == LessonKind.EXAM
+    val isCredit = lessonKind == LessonKind.CREDIT
+
     val typeBadgeBg = when (lessonKind) {
+        LessonKind.EXAM -> MaterialTheme.colorScheme.errorContainer
+        LessonKind.CREDIT -> MaterialTheme.colorScheme.tertiaryContainer
+        LessonKind.CONSULTATION -> MaterialTheme.colorScheme.secondaryContainer
         LessonKind.LECTURE -> MaterialTheme.colorScheme.tertiaryContainer
         LessonKind.PRACTICE -> MaterialTheme.colorScheme.primaryContainer
         LessonKind.LAB, LessonKind.OTHER -> MaterialTheme.colorScheme.secondaryContainer
     }
     val typeBadgeFg = when (lessonKind) {
+        LessonKind.EXAM -> MaterialTheme.colorScheme.onErrorContainer
+        LessonKind.CREDIT -> MaterialTheme.colorScheme.onTertiaryContainer
+        LessonKind.CONSULTATION -> MaterialTheme.colorScheme.onSecondaryContainer
         LessonKind.LECTURE -> MaterialTheme.colorScheme.onTertiaryContainer
         LessonKind.PRACTICE -> MaterialTheme.colorScheme.onPrimaryContainer
         LessonKind.LAB, LessonKind.OTHER -> MaterialTheme.colorScheme.onSecondaryContainer
     }
 
     val lessonKindLabel = when (lessonKind) {
+        LessonKind.EXAM -> strings.exam
+        LessonKind.CREDIT -> strings.credit
+        LessonKind.CONSULTATION -> strings.consultation
         LessonKind.LECTURE -> strings.lecture
         LessonKind.PRACTICE -> strings.practice
         LessonKind.LAB -> strings.laboratory
         LessonKind.OTHER -> strings.lessonDefault
     }
 
-    var progress by remember { mutableStateOf(0f) }
     var isActive by remember { mutableStateOf(false) }
+    var isPast by remember { mutableStateOf(false) }
 
     val startClean = remember(period.timeStart) { period.timeStart?.take(5) ?: "--:--" }
     val endClean = remember(period.timeEnd) { period.timeEnd?.take(5) ?: "" }
@@ -2026,15 +2690,18 @@ fun ModernLessonCard(
                     if (start != null && end != null && current != null) {
                         if (current.time in start.time..end.time) {
                             isActive = true
-                            val totalDuration = (end.time - start.time).coerceAtLeast(1L)
-                            val elapsed = current.time - start.time
-                            progress = (elapsed.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f)
+                            isPast = false
+                        } else if (current.time > end.time) {
+                            isActive = false
+                            isPast = true
                         } else {
                             isActive = false
+                            isPast = false
                         }
                     }
                 } else {
                     isActive = false
+                    isPast = false
                 }
             } catch (_: Exception) {
             }
@@ -2078,14 +2745,29 @@ fun ModernLessonCard(
         label = "lesson_card_scale"
     )
 
-    val targetCardBg = if (isActive) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        lerp(
+    val targetCardBg = when {
+        isExam && !isPast -> lerp(
+            MaterialTheme.colorScheme.surfaceContainer,
+            MaterialTheme.colorScheme.errorContainer,
+            if (isActive) 0.22f else 0.10f
+        )
+        isCredit && !isPast -> lerp(
+            MaterialTheme.colorScheme.surfaceContainer,
+            MaterialTheme.colorScheme.tertiaryContainer,
+            if (isActive) 0.20f else 0.08f
+        )
+        isActive -> MaterialTheme.colorScheme.surfaceContainerHighest
+        else -> lerp(
             MaterialTheme.colorScheme.surfaceContainer,
             MaterialTheme.colorScheme.surfaceContainerHigh,
             0.55f
         )
+    }
+
+    val cardBorder = when {
+        isExam && !isPast -> BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.26f))
+        isActive -> BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
+        else -> null
     }
 
     val cardContainerColor by animateColorAsState(
@@ -2098,6 +2780,7 @@ fun ModernLessonCard(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
+            .alpha(if (isPast) 0.58f else 1f)
             .animateContentSize(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()),
         onClick = {
             if (!conferenceLink.isNullOrBlank()) {
@@ -2114,7 +2797,8 @@ fun ModernLessonCard(
         enabled = canClickCard,
         interactionSource = interactionSource,
         shape = shape,
-        color = cardContainerColor
+        color = cardContainerColor,
+        border = cardBorder
     ) {
         Column(
             modifier = Modifier
@@ -2127,14 +2811,25 @@ fun ModernLessonCard(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.Top
             ) {
-                // Блок времени слева: крупно начало пары, аккуратно конец
+                // Блок времени слева: для экзаменов — мягкий tonal errorContainer, для текущей пары — primary
+                val timeBlockBg = when {
+                    isActive -> MaterialTheme.colorScheme.primary
+                    isExam && !isPast -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
+                    else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                }
+                val timeBlockFg = when {
+                    isActive -> MaterialTheme.colorScheme.onPrimary
+                    isExam && !isPast -> MaterialTheme.colorScheme.onErrorContainer
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+                val timeSubFg = when {
+                    isActive -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.78f)
+                    isExam && !isPast -> MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = if (isActive) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    },
+                    color = timeBlockBg,
                     modifier = Modifier.widthIn(min = 76.dp)
                 ) {
                     Column(
@@ -2146,11 +2841,7 @@ fun ModernLessonCard(
                             text = startClean,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.ExtraBold,
-                            color = if (isActive) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
+                            color = timeBlockFg
                         )
                         if (endClean.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(2.dp))
@@ -2158,70 +2849,101 @@ fun ModernLessonCard(
                                 text = "${strings.untilTimePrefix} $endClean",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Medium,
-                                color = if (isActive) {
-                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.78f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
+                                color = timeSubFg
                             )
                         }
                     }
                 }
 
-                // Основной контент карточки: бейджи, предмет, преподаватель и кнопка-чип конференции
+                // Основной контент: аккуратная верхняя строка (тип + пара слева, ссылка/аудитория справа), предмет и преподаватель
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = typeBadgeBg
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = lessonKindLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = typeBadgeFg,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-
-                        if (lessonNumber > 0) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                                color = typeBadgeBg
                             ) {
                                 Text(
-                                    text = "$lessonNumber ${strings.pairLabel}",
+                                    text = lessonKindLabel,
                                     style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold,
+                                    color = typeBadgeFg,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
-                        }
 
-                        // Если в API стоит флаг нестандартного времени пары — сразу подсвечиваем студенту
-                        if (period.nonstandardTime == true) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.tertiaryContainer
-                            ) {
-                                Text(
-                                    text = strings.nonstandardTimeBadge,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
+                            if (lessonNumber > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isActive) {
+                                        MaterialTheme.colorScheme.surfaceContainerLow
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    }
+                                ) {
+                                    Text(
+                                        text = "$lessonNumber ${strings.pairLabel}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+
+                            if (period.nonstandardTime == true) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.tertiaryContainer
+                                ) {
+                                    Text(
+                                        text = strings.nonstandardTimeBadge,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                    )
+                                }
                             }
                         }
 
-                        if (isOnline) {
+                        // Справа в этой же строке — либо кликабельная платформа (MS Teams / Zoom / Meet), либо Онлайн / Аудитория
+                        if (linkChip != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = linkChip.icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(13.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = linkChip.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        } else if (isOnline) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.secondaryContainer
@@ -2241,7 +2963,8 @@ fun ModernLessonCard(
                                         text = strings.onlineBadge,
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        maxLines = 1
                                     )
                                 }
                             }
@@ -2272,32 +2995,6 @@ fun ModernLessonCard(
                                 }
                             }
                         }
-
-                        if (linkChip != null) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = linkChip.icon,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(13.dp),
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    Text(
-                                        text = linkChip.label,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                        }
                     }
 
                     Text(
@@ -2321,24 +3018,91 @@ fun ModernLessonCard(
 
                     val teacherName = period.teachersNameFull?.takeIf { it.isNotBlank() }
                         ?: period.teachersName?.takeIf { it.isNotBlank() }
-                    if (teacherName != null) {
+                    val showCalendarPill = (isExam || isCredit) && !isPast && startClean != "--:--"
+                    if (teacherName != null || showCalendarPill) {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = teacherName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (teacherName != null) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = teacherName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+
+                            if (showCalendarPill) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (isExam) {
+                                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f)
+                                    } else {
+                                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f)
+                                    },
+                                    onClick = {
+                                        val locationText = if (isOnline) strings.onlineBadge else classroom
+                                        val desc = listOfNotNull(
+                                            lessonKindLabel,
+                                            teacherName,
+                                            conferenceLink
+                                        ).joinToString(" • ")
+                                        openCalendarForLesson(
+                                            context = context,
+                                            title = "$lessonKindLabel: $primaryTitle",
+                                            date = date,
+                                            startTime = startClean,
+                                            endTime = endClean,
+                                            location = locationText,
+                                            description = desc
+                                        )
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarToday,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(12.dp),
+                                            tint = if (isExam) {
+                                                MaterialTheme.colorScheme.onErrorContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onTertiaryContainer
+                                            }
+                                        )
+                                        Text(
+                                            text = strings.addToCalendar,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isExam) {
+                                                MaterialTheme.colorScheme.onErrorContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onTertiaryContainer
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2386,6 +3150,9 @@ private fun openUrlSafely(context: android.content.Context, rawUrl: String) {
 }
 
 private enum class LessonKind {
+    EXAM,
+    CREDIT,
+    CONSULTATION,
     LECTURE,
     PRACTICE,
     LAB,
@@ -2397,16 +3164,69 @@ private fun resolveLessonKind(
     shortName: String,
     fullName: String
 ): LessonKind {
-    val source = "$shortName $fullName".lowercase(Locale.getDefault())
+    // Сначала смотрим на точный typeStr от МКР, потом — на название предмета и заметки
+    val typeTag = period.typeStr?.trim()?.lowercase(Locale.getDefault()).orEmpty()
+    val source = "$typeTag $shortName $fullName ${period.notice.orEmpty()} ${period.info.orEmpty()}"
+        .lowercase(Locale.getDefault())
 
-    if (source.contains("лк") || source.contains("лекц")) return LessonKind.LECTURE
-    if (source.contains("пз") || source.contains("практ") || source.contains("сем")) return LessonKind.PRACTICE
-    if (source.contains("лб") || source.contains("лаб")) return LessonKind.LAB
+    if (
+        typeTag.contains("екз") || typeTag.contains("экз") || typeTag.contains("exam") ||
+        source.contains("екзам") || source.contains("экзам") || source.contains("іспит") ||
+        source.contains("диф") || source.contains("атест") || source.contains("екз.")
+    ) {
+        return LessonKind.EXAM
+    }
+    if (typeTag.contains("зал") || typeTag.contains("зач") || source.contains("залік") || source.contains("зачет")) {
+        return LessonKind.CREDIT
+    }
+    if (typeTag.contains("конс") || source.contains("консульт")) {
+        return LessonKind.CONSULTATION
+    }
+    if (typeTag == "лк" || source.contains("лк") || source.contains("лекц")) return LessonKind.LECTURE
+    if (typeTag == "пз" || source.contains("пз") || source.contains("практ") || source.contains("сем")) return LessonKind.PRACTICE
+    if (typeTag == "лб" || source.contains("лб") || source.contains("лаб")) return LessonKind.LAB
 
     return when (period.type) {
         1 -> LessonKind.LECTURE
         2 -> LessonKind.PRACTICE
         3 -> LessonKind.LAB
+        4 -> LessonKind.CONSULTATION
+        5 -> LessonKind.EXAM
+        6 -> LessonKind.CREDIT
         else -> LessonKind.OTHER
+    }
+}
+
+private fun openCalendarForLesson(
+    context: android.content.Context,
+    title: String,
+    date: String,
+    startTime: String,
+    endTime: String,
+    location: String,
+    description: String
+) {
+    try {
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        val startMillis = dateFormat.parse("$date $startTime")?.time ?: return
+        val endMillis = if (endTime.isNotBlank()) {
+            dateFormat.parse("$date $endTime")?.time ?: (startMillis + 90 * 60 * 1000L)
+        } else {
+            startMillis + 90 * 60 * 1000L
+        }
+        val intent = Intent(Intent.ACTION_INSERT).apply {
+            data = CalendarContract.Events.CONTENT_URI
+            putExtra(CalendarContract.Events.TITLE, title)
+            putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+            if (location.isNotBlank()) {
+                putExtra(CalendarContract.Events.EVENT_LOCATION, location)
+            }
+            if (description.isNotBlank()) {
+                putExtra(CalendarContract.Events.DESCRIPTION, description)
+            }
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
     }
 }

@@ -20,6 +20,7 @@ class OngoingLessonService : Service() {
     private var teacher: String = ""
     private var startTimeStr: String = ""
     private var endTimeStr: String = ""
+    private var conferenceLink: String? = null
     private var startTimeMillis: Long = 0
     private var endTimeMillis: Long = 0
 
@@ -41,6 +42,7 @@ class OngoingLessonService : Service() {
         teacher = intent?.getStringExtra("teacher") ?: ""
         startTimeStr = intent?.getStringExtra("start_time") ?: ""
         endTimeStr = intent?.getStringExtra("end_time") ?: ""
+        conferenceLink = intent?.getStringExtra("conference_link")
 
         if (startTimeStr.isEmpty() || endTimeStr.isEmpty()) {
             stopSelf()
@@ -68,7 +70,8 @@ class OngoingLessonService : Service() {
             classroom = classroom,
             teacher = teacher,
             startTime = startTimeStr,
-            endTime = endTimeStr
+            endTime = endTimeStr,
+            conferenceLink = conferenceLink
         )
 
         startForeground(NOTIFICATION_ID, initialNotification)
@@ -95,7 +98,8 @@ class OngoingLessonService : Service() {
             classroom = classroom,
             teacher = teacher,
             startTime = startTimeStr,
-            endTime = endTimeStr
+            endTime = endTimeStr,
+            conferenceLink = conferenceLink
         )
 
         val nm = getSystemService(android.app.NotificationManager::class.java)

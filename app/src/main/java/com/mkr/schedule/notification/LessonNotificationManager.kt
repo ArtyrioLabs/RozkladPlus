@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.core.app.NotificationCompat
@@ -44,9 +45,12 @@ class LessonNotificationManager(private val context: Context) {
             return if (cleaned.isNotEmpty()) "Ауд. $cleaned" else trimmed
         }
 
-        fun resolveLessonTypeLabel(typeCode: Int?, shortName: String, fullName: String): String {
-            val source = "$shortName $fullName".lowercase(Locale.getDefault())
-            if (source.contains("екз") || source.contains("іспит") || source.contains("залік")) return "Екзамен"
+        fun resolveLessonTypeLabel(typeCode: Int?, shortName: String, fullName: String, typeStr: String? = null): String {
+            val tag = typeStr?.trim()?.lowercase(Locale.getDefault()).orEmpty()
+            val source = "$tag $shortName $fullName".lowercase(Locale.getDefault())
+            if (tag.contains("екз") || tag.contains("экз") || source.contains("екзам") || source.contains("іспит")) return "Екзамен"
+            if (tag.contains("зал") || source.contains("залік")) return "Залік"
+            if (tag.contains("конс") || source.contains("консульт")) return "Консультація"
             if (source.contains("лк") || source.contains("лекц")) return "Лекція"
             if (source.contains("пз") || source.contains("практ") || source.contains("сем")) return "Практика"
             if (source.contains("лб") || source.contains("лаб")) return "Лабораторна"
@@ -54,8 +58,9 @@ class LessonNotificationManager(private val context: Context) {
                 1 -> "Лекція"
                 2 -> "Практика"
                 3 -> "Лабораторна"
-                4 -> "Семінар"
+                4 -> "Консультація"
                 5 -> "Екзамен"
+                6 -> "Залік"
                 else -> "Заняття"
             }
         }
@@ -113,6 +118,40 @@ class LessonNotificationManager(private val context: Context) {
         }
     }
 
+    private fun resolveConferencePlatform(conferenceLink: String?): String? {
+        val raw = conferenceLink?.trim()?.lowercase(Locale.getDefault()) ?: return null
+        return when {
+            raw.contains("teams.microsoft.com") || raw.contains("teams.live.com") -> "MS Teams"
+            raw.contains("zoom.us") -> "Zoom"
+            raw.contains("meet.google.com") -> "Google Meet"
+            raw.contains("t.me/") || raw.contains("telegram.me") -> "Telegram"
+            raw.contains("discord.com") || raw.contains("discord.gg") -> "Discord"
+            raw.contains("dl.knute.edu.ua") || raw.contains("moodle") -> "Moodle"
+            else -> null
+        }
+    }
+
+    private fun resolveJoinButtonLabel(conferenceLink: String?): String {
+        val platform = resolveConferencePlatform(conferenceLink)
+        return if (platform != null) "Приєднатися • $platform" else "Приєднатися"
+    }
+
+    private fun buildJoinPendingIntent(conferenceLink: String?, requestCode: Int): PendingIntent? {
+        val cleanUrl = conferenceLink?.trim()?.takeIf {
+            it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)
+        } ?: return null
+
+        val joinIntent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            joinIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
     fun showLessonReminder(
         subjectName: String,
         subjectShortName: String,
@@ -123,7 +162,8 @@ class LessonNotificationManager(private val context: Context) {
         lessonNumber: Int = 0,
         lessonType: String = "Пара",
         reminderMinutes: Int,
-        lessonDate: String
+        lessonDate: String,
+        conferenceLink: String? = null
     ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -167,9 +207,11 @@ class LessonNotificationManager(private val context: Context) {
 
         val timeSpan = if (endClean.isNotEmpty()) "$startClean–$endClean" else startClean
         val cleanTeacher = teacher.takeIf { it.isNotBlank() && it != "N/A" }
+        val platformName = resolveConferencePlatform(conferenceLink)
+        val locationText = if (cleanRoom == "Онлайн" && platformName != null) platformName else cleanRoom
         val subtitle = listOfNotNull(
             timeSpan.takeIf { it.isNotBlank() },
-            cleanRoom,
+            locationText,
             cleanTeacher
         ).joinToString(" • ")
 
@@ -210,6 +252,14 @@ class LessonNotificationManager(private val context: Context) {
             .setVibrate(longArrayOf(0, 200, 100, 200))
             .setColor(0xFF104A32.toInt())
 
+        buildJoinPendingIntent(conferenceLink, notificationId + 7)?.let { joinPendingIntent ->
+            builder.addAction(
+                android.R.drawable.ic_menu_view,
+                resolveJoinButtonLabel(conferenceLink),
+                joinPendingIntent
+            )
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -232,7 +282,8 @@ class LessonNotificationManager(private val context: Context) {
         endTime: String = "",
         lessonNumber: Int = 0,
         lessonType: String = "Пара",
-        lessonDate: String
+        lessonDate: String,
+        conferenceLink: String? = null
     ) {
         showLessonReminder(
             subjectName = subjectName,
@@ -244,7 +295,8 @@ class LessonNotificationManager(private val context: Context) {
             lessonNumber = lessonNumber,
             lessonType = lessonType,
             reminderMinutes = 0,
-            lessonDate = lessonDate
+            lessonDate = lessonDate,
+            conferenceLink = conferenceLink
         )
     }
 
@@ -268,7 +320,8 @@ class LessonNotificationManager(private val context: Context) {
         classroom: String = "",
         teacher: String = "",
         startTime: String = "",
-        endTime: String = ""
+        endTime: String = "",
+        conferenceLink: String? = null
     ): android.app.Notification {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -292,13 +345,15 @@ class LessonNotificationManager(private val context: Context) {
 
         val title = subjectName
         val cleanRoom = if (classroom.isNotBlank()) formatClassroom(classroom) else null
+        val platformName = resolveConferencePlatform(conferenceLink)
+        val locationLabel = if (cleanRoom == "Онлайн" && platformName != null) platformName else (platformName ?: cleanRoom)
         val cleanTeacher = teacher.takeIf { it.isNotBlank() && it != "N/A" }
         val timeRange = if (startClean.isNotEmpty() && endClean.isNotEmpty()) "$startClean–$endClean" else null
 
         val detailsLine = listOfNotNull(
-            cleanRoom,
-            cleanTeacher,
-            timeRange
+            timeRange,
+            locationLabel,
+            cleanTeacher
         ).joinToString(" • ")
 
         val extras = Bundle().apply {
@@ -323,6 +378,14 @@ class LessonNotificationManager(private val context: Context) {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setColor(0xFF104A32.toInt())
 
+        buildJoinPendingIntent(conferenceLink, 9901)?.let { joinPendingIntent ->
+            builder.addAction(
+                android.R.drawable.ic_menu_view,
+                resolveJoinButtonLabel(conferenceLink),
+                joinPendingIntent
+            )
+        }
+
         return builder.build()
     }
 
@@ -340,6 +403,7 @@ class LessonNotificationManager(private val context: Context) {
             putExtra("teacher", "Захаров Р.Г.")
             putExtra("start_time", startStr)
             putExtra("end_time", endStr)
+            putExtra("conference_link", "https://meet.google.com/")
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -361,7 +425,8 @@ class LessonNotificationManager(private val context: Context) {
             lessonNumber = 3,
             lessonType = "Лекція",
             reminderMinutes = 5,
-            lessonDate = LocalDate.now().toString()
+            lessonDate = LocalDate.now().toString(),
+            conferenceLink = "https://meet.google.com/"
         )
     }
 }

@@ -33,6 +33,7 @@ object ExactAlarmScheduler {
         val schedule = getScheduleFromPreferences(context)
         if (schedule.isEmpty()) return
 
+        val apiLinksPrefs = context.getSharedPreferences("api_lesson_links", Context.MODE_PRIVATE)
         val nowDateTime = LocalDateTime.now(ZoneId.systemDefault())
         val today = nowDateTime.toLocalDate()
 
@@ -78,8 +79,13 @@ object ExactAlarmScheduler {
                     val lessonType = LessonNotificationManager.resolveLessonTypeLabel(
                         period.type,
                         shortName,
-                        fullName
+                        fullName,
+                        period.typeStr
                     )
+                    val conferenceLink: String? = (period.r1?.let { apiLinksPrefs.getString("r1_${it}_$cleanDateStr", null) })
+                        ?: (period.disciplineId?.let { apiLinksPrefs.getString("disc_$it", null) })
+                        ?: extractFirstUrl(period.classroom)
+                        ?: extractFirstUrl(period.disciplineFullName)
 
                     // If this lesson is currently ongoing right now today, start the live countdown service immediately!
                     if (lessonDate == today && nowDateTime.isAfter(lessonStart) && nowDateTime.isBefore(lessonEnd)) {
@@ -91,6 +97,9 @@ object ExactAlarmScheduler {
                             putExtra("teacher", teacher)
                             putExtra("start_time", startTimeStr)
                             putExtra("end_time", endTimeStr)
+                            if (!conferenceLink.isNullOrBlank()) {
+                                putExtra("conference_link", conferenceLink)
+                            }
                         }
                         try {
                             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -117,6 +126,11 @@ object ExactAlarmScheduler {
                                 putExtra("lessonNumber", pairNum)
                                 putExtra("lessonType", lessonType)
                                 putExtra("minutesBefore", minutesBefore)
+                                putExtra("r1", period.r1 ?: -1)
+                                putExtra("disciplineId", period.disciplineId ?: -1)
+                                if (!conferenceLink.isNullOrBlank()) {
+                                    putExtra("conferenceLink", conferenceLink)
+                                }
                             }
                             val requestCode = "${cleanDateStr}_${startTimeStr}_${shortName}_$minutesBefore".hashCode()
 
@@ -224,5 +238,11 @@ object ExactAlarmScheduler {
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    private fun extractFirstUrl(rawText: String?): String? {
+        if (rawText.isNullOrBlank()) return null
+        val match = Regex("""https?://[^\s"'<>);,]+""", RegexOption.IGNORE_CASE).find(rawText)
+        return match?.value?.trimEnd('.', ',', ';', ')')
     }
 }

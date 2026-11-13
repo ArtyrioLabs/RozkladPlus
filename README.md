@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Design-Material_3_Expressive-8AB4F8?style=flat-square&logo=materialdesign&logoColor=white" alt="Material 3 Expressive" />
   <img src="https://img.shields.io/badge/Language-Kotlin_2.0-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" />
   <img src="https://img.shields.io/badge/UI-Jetpack_Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Compose" />
-  <img src="https://img.shields.io/badge/Version-v1.8.7-blue?style=flat-square" alt="Version 1.8.7" />
+  <img src="https://img.shields.io/badge/Version-v1.9.0-blue?style=flat-square" alt="Version 1.9.0" />
   <img src="https://img.shields.io/badge/License-Apache_2.0-lightgrey?style=flat-square" alt="License" />
 </p>
 

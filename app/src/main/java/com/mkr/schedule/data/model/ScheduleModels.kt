@@ -39,10 +39,13 @@ data class TimeTablePeriod(
     @SerializedName("teachersName") val teachersName: String?,
     @SerializedName("teachersNameFull") val teachersNameFull: String?,
     val type: Int?,
+    @SerializedName("typeStr") val typeStr: String? = null,
     @SerializedName("dateUpdated") val dateUpdated: String?,
     @SerializedName("nonstandardTime") val nonstandardTime: Boolean?,
     val groups: String?,
-    @SerializedName("extraText") val extraText: Boolean?
+    @SerializedName("extraText") val extraText: Boolean?,
+    val notice: String? = null,
+    val info: String? = null
 )
 
 data class CallSchedule(
