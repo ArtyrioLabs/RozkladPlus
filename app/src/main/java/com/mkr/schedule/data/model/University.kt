@@ -19,7 +19,8 @@ data class University(
                 shortName = "ДТЕУ",
                 baseUrl = "https://mia.mobil.knute.edu.ua",
                 portalUrl = "https://mia1.knute.edu.ua/"
-            ),
+            )
+            /* Temporarily disabled — re-enable gradually as each university is verified:
             University("13", "Национальный фармацевтический университет (г. Харьков)", "НФаУ", "http://smsapi.nuph.edu.ua", "https://portal.nuph.edu.ua", false, 0, "Проблемы с электроэнергией, то есть то нет.\nЕсли нет подключения, напишите на почту support@mkr.org.ua и укажите ВУЗ. Возможно в университете остановлена служба на сервере."),
             University("17", "Національний університет цивільного захисту України (м. Харків)", "НУЦЗУ", "http://mrozklad.nuczu.edu.ua", "http://rozklad.nuczu.edu.ua", true, 0, "Университет отключен от приложения в связи с переходом на другую программу"),
             University("14", "Сумський нацiональний аграрний унiверситет", "СНАУ", "https://web.portal.snau.edu.ua", "http://portal.snau.edu.ua"),
@@ -59,6 +60,7 @@ data class University(
             University("67", "Національний університет «Запорізька політехніка»", "Запорізька політехніка", "https://api.zp.edu.ua", "https://portal.zp.edu.ua"),
             University("68", "Національна академія Служби Безпеки України", "НАСБУ", "https://api.asu.nasbu.edu.ua", "https://www.nasbu.edu.ua", true),
             University("74", "Фаховий коледж \"Альма-матер (ЦДУ ім. В. Винниченка)", "Коледж Альма-матер", "http://portal.cusu.edu.ua/api", "http://portal.cusu.edu.ua", false, 1)
+            */
         )
     }
     

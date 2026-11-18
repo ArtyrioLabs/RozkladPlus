@@ -548,29 +548,31 @@ fun PublicScheduleScreen(
                                     subtitle = "Оберіть ваш заклад вищої освіти зі списку",
                                     icon = Icons.Default.AccountBalance
                                 ) {
-                                    OutlinedTextField(
-                                        value = universitySearchQuery,
-                                        onValueChange = { universitySearchQuery = it },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(bottom = 8.dp),
-                                        singleLine = true,
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.Search,
-                                                contentDescription = null
-                                            )
-                                        },
-                                        trailingIcon = if (universitySearchQuery.isNotEmpty()) {
-                                            {
-                                                IconButton(onClick = { universitySearchQuery = "" }) {
-                                                    Icon(Icons.Default.Close, contentDescription = "Очистити")
+                                    if (uiState.universities.size > 1) {
+                                        OutlinedTextField(
+                                            value = universitySearchQuery,
+                                            onValueChange = { universitySearchQuery = it },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 8.dp),
+                                            singleLine = true,
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            trailingIcon = if (universitySearchQuery.isNotEmpty()) {
+                                                {
+                                                    IconButton(onClick = { universitySearchQuery = "" }) {
+                                                        Icon(Icons.Default.Close, contentDescription = "Очистити")
+                                                    }
                                                 }
-                                            }
-                                        } else null,
-                                        placeholder = { Text("Пошук за назвою або абревіатурою") },
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
+                                            } else null,
+                                            placeholder = { Text("Пошук за назвою або абревіатурою") },
+                                            shape = RoundedCornerShape(16.dp)
+                                        )
+                                    }
 
                                     val filteredUniversities = if (universitySearchQuery.isBlank()) {
                                         uiState.universities
