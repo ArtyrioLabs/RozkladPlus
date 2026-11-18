@@ -66,9 +66,6 @@ class PublicScheduleViewModel @Inject constructor(
     private val _lessonLinksMap = MutableStateFlow<Map<String, String>>(emptyMap())
     val lessonLinksMap: StateFlow<Map<String, String>> = _lessonLinksMap.asStateFlow()
 
-    private val _isChillModeEnabled = MutableStateFlow(false)
-    val isChillModeEnabled: StateFlow<Boolean> = _isChillModeEnabled
-
     private val _studentCardPhotoPath = MutableStateFlow<String?>(null)
     val studentCardPhotoPath: StateFlow<String?> = _studentCardPhotoPath
 
@@ -107,12 +104,6 @@ class PublicScheduleViewModel @Inject constructor(
                 loadStructures()
             } else {
                 _uiState.value = _uiState.value.copy(selectedUniversity = null)
-            }
-        }
-
-        viewModelScope.launch {
-            preferencesManager.isChillModeEnabled.collect { enabled ->
-                _isChillModeEnabled.value = enabled
             }
         }
 

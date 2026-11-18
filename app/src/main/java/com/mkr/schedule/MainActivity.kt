@@ -30,9 +30,15 @@ import com.mkr.schedule.util.security.AppIntegrity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+enum class NotificationNoticeType {
+    ENABLED,
+    DENIED
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private var pendingUpdate by mutableStateOf<com.mkr.schedule.data.model.AppUpdate?>(null)
+    private var pendingNotificationNotice by mutableStateOf<NotificationNoticeType?>(null)
     private val preferencesManager by lazy { PreferencesManager(applicationContext) }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -40,15 +46,21 @@ class MainActivity : ComponentActivity() {
     ) { isGranted ->
         lifecycleScope.launch {
             if (isGranted) {
+                preferencesManager.setNotificationsEnabled(true)
                 try {
                     com.mkr.schedule.notification.LessonReminderWorker.schedule(this@MainActivity)
                     com.mkr.schedule.notification.ExactAlarmScheduler.scheduleAllAlarms(this@MainActivity)
-                    LogCollector.log("MainActivity", "Notification permission granted; reminders scheduled")
+                    LogCollector.log("MainActivity", "Notification permission granted; reminders enabled and scheduled")
                 } catch (e: Exception) {
                     LogCollector.log("MainActivity", "Failed to schedule reminders after permission grant: ${e.message}")
                 }
+                pendingNotificationNotice = NotificationNoticeType.ENABLED
             } else {
-                LogCollector.log("MainActivity", "Notification permission denied")
+                preferencesManager.setNotificationsEnabled(false)
+                com.mkr.schedule.notification.LessonReminderWorker.cancel(this@MainActivity)
+                com.mkr.schedule.notification.ExactAlarmScheduler.cancelAllAlarms(this@MainActivity)
+                LogCollector.log("MainActivity", "Notification permission denied; reminders disabled")
+                pendingNotificationNotice = NotificationNoticeType.DENIED
             }
         }
     }
@@ -77,32 +89,41 @@ class MainActivity : ComponentActivity() {
 
         com.mkr.schedule.util.AppAnalytics.logAppOpen()
 
-        // Schedule background notification reminders if enabled
+        // First-launch notification permission & default reminder scheduling
         lifecycleScope.launch {
-            if (preferencesManager.getNotificationsEnabled()) {
-                try {
-                    val hasNotificationPermission =
-                        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
-                            ContextCompat.checkSelfPermission(
-                                this@MainActivity,
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) == PackageManager.PERMISSION_GRANTED
+            try {
+                val hasNotificationPermission =
+                    android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
+                        ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) == PackageManager.PERMISSION_GRANTED
+                val alreadyPrompted = preferencesManager.getNotificationPermissionPrompted()
 
-                    if (!hasNotificationPermission &&
-                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
-                    ) {
+                if (!alreadyPrompted) {
+                    preferencesManager.setNotificationPermissionPrompted(true)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        LogCollector.log("MainActivity", "Requested POST_NOTIFICATIONS permission")
+                        LogCollector.log("MainActivity", "First launch: requested POST_NOTIFICATIONS permission")
+                    } else {
+                        if (!preferencesManager.hasNotificationsSetting()) {
+                            preferencesManager.setNotificationsEnabled(true)
+                            pendingNotificationNotice = NotificationNoticeType.ENABLED
+                        }
+                        if (preferencesManager.getNotificationsEnabled()) {
+                            com.mkr.schedule.notification.LessonReminderWorker.schedule(this@MainActivity)
+                            com.mkr.schedule.notification.ExactAlarmScheduler.scheduleAllAlarms(this@MainActivity)
+                        }
                     }
-
+                } else if (preferencesManager.getNotificationsEnabled() && hasNotificationPermission) {
                     com.mkr.schedule.notification.LessonReminderWorker.schedule(this@MainActivity)
                     com.mkr.schedule.notification.ExactAlarmScheduler.scheduleAllAlarms(this@MainActivity)
                     LogCollector.log("MainActivity", "Reminder worker and alarms scheduled on app start")
-                } catch (e: Exception) {
-                    LogCollector.log("MainActivity", "Failed to schedule reminders: ${e.message}")
+                } else {
+                    com.mkr.schedule.notification.LessonReminderWorker.cancel(this@MainActivity)
                 }
-            } else {
-                com.mkr.schedule.notification.LessonReminderWorker.cancel(this@MainActivity)
+            } catch (e: Exception) {
+                LogCollector.log("MainActivity", "Failed to configure notifications on startup: ${e.message}")
             }
         }
 
@@ -118,7 +139,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MkrApp()
+                    MkrApp(
+                        notificationNotice = pendingNotificationNotice,
+                        onDismissNotificationNotice = { pendingNotificationNotice = null }
+                    )
                     pendingUpdate?.let { update ->
                         androidx.compose.material3.AlertDialog(
                             onDismissRequest = { if (!update.forceUpdate) pendingUpdate = null },
@@ -159,7 +183,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MkrApp() {
+fun MkrApp(
+    notificationNotice: NotificationNoticeType? = null,
+    onDismissNotificationNotice: () -> Unit = {}
+) {
     val context = LocalContext.current
     val preferencesManager = remember { PreferencesManager(context.applicationContext) }
     val languageCode by preferencesManager.language.collectAsState(initial = "uk")
@@ -168,7 +195,9 @@ fun MkrApp() {
     val publicScheduleViewModel: PublicScheduleViewModel = hiltViewModel()
     ProvideStrings(language = selectedLanguage) {
         PublicScheduleScreen(
-            viewModel = publicScheduleViewModel
+            viewModel = publicScheduleViewModel,
+            notificationNotice = notificationNotice,
+            onDismissNotificationNotice = onDismissNotificationNotice
         )
     }
 }

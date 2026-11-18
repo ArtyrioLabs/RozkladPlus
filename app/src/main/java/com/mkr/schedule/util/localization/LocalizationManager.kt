@@ -116,7 +116,6 @@ interface Strings {
     val groupPrefix: String
     val noProfileSelected: String
     val bellScheduleUnavailable: String
-    fun formatLevel(level: Int, xp: Int): String
     fun formatOrdinalClass(number: Int): String
 
     // Settings
@@ -128,8 +127,6 @@ interface Strings {
     val themeDark: String
     val monetTitle: String
     val monetSubtitle: String
-    val gamificationTitle: String
-    val gamificationSubtitle: String
     val languageSubtitle: String
 
     val notificationsSection: String
@@ -138,6 +135,9 @@ interface Strings {
     val remindersEnabledSnackbar: String
     val remindersDisabledSnackbar: String
     val remindersStartFailed: String
+    val notificationPermissionEnabledNotice: String
+    val notificationPermissionDeniedNotice: String
+    val openSettingsAction: String
     val testNotificationTitle: String
     val testNotificationSubtitle: String
     val testNotificationSentSnackbar: String
@@ -293,7 +293,6 @@ object UkrainianStrings : Strings {
     override val groupPrefix = "Група"
     override val noProfileSelected = "Профіль не вибрано"
     override val bellScheduleUnavailable = "Розклад дзвінків для обраного ЗВО недоступний"
-    override fun formatLevel(level: Int, xp: Int): String = "Рівень $level • $xp XP"
     override fun formatOrdinalClass(number: Int): String = "$number-та пара"
 
     // Settings
@@ -305,8 +304,6 @@ object UkrainianStrings : Strings {
     override val themeDark = "Темна"
     override val monetTitle = "Динамічні кольори Monet"
     override val monetSubtitle = "Адаптувати кольори інтерфейсу під шпалери"
-    override val gamificationTitle = "Гейміфікація прогресу (XP)"
-    override val gamificationSubtitle = "Показувати рівень та досвід за пройдені пари в меню"
     override val languageSubtitle = "Мова інтерфейсу застосунку"
 
     override val notificationsSection = "Сповіщення та розклад"
@@ -315,6 +312,11 @@ object UkrainianStrings : Strings {
     override val remindersEnabledSnackbar = "Нагадування увімкнено"
     override val remindersDisabledSnackbar = "Нагадування вимкнено"
     override val remindersStartFailed = "Не вдалося запустити нагадування"
+    override val notificationPermissionEnabledNotice =
+        "Сповіщення за 15 та 5 хв до пари увімкнено. Вимкнути можна в Налаштуваннях"
+    override val notificationPermissionDeniedNotice =
+        "Сповіщення не увімкнено. Увімкнути нагадування можна в Налаштуваннях"
+    override val openSettingsAction = "Налаштування"
     override val testNotificationTitle = "Перевірити сповіщення"
     override val testNotificationSubtitle = "Надіслати тестове нагадування прямо зараз"
     override val testNotificationSentSnackbar = "Тестове сповіщення надіслано"
@@ -491,7 +493,6 @@ object EnglishStrings : Strings {
     override val groupPrefix = "Group"
     override val noProfileSelected = "No profile selected"
     override val bellScheduleUnavailable = "Bell schedule for this institution is unavailable"
-    override fun formatLevel(level: Int, xp: Int): String = "Level $level • $xp XP"
     override fun formatOrdinalClass(number: Int): String {
         return when (number) {
             1 -> "1st class"
@@ -510,8 +511,6 @@ object EnglishStrings : Strings {
     override val themeDark = "Dark"
     override val monetTitle = "Dynamic Monet Colors"
     override val monetSubtitle = "Adapt UI colors to system wallpaper"
-    override val gamificationTitle = "Gamification & Progress (XP)"
-    override val gamificationSubtitle = "Show level and XP for completed classes in menu"
     override val languageSubtitle = "Application interface language"
 
     override val notificationsSection = "Notifications & Schedule"
@@ -520,6 +519,11 @@ object EnglishStrings : Strings {
     override val remindersEnabledSnackbar = "Reminders enabled"
     override val remindersDisabledSnackbar = "Reminders disabled"
     override val remindersStartFailed = "Failed to start reminders"
+    override val notificationPermissionEnabledNotice =
+        "Class reminders (15 & 5 min before) enabled. You can turn them off in Settings"
+    override val notificationPermissionDeniedNotice =
+        "Notifications disabled. You can enable reminders anytime in Settings"
+    override val openSettingsAction = "Settings"
     override val testNotificationTitle = "Test Notifications"
     override val testNotificationSubtitle = "Send a test reminder notification right now"
     override val testNotificationSentSnackbar = "Test notification sent"

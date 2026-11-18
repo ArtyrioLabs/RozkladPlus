@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -85,7 +84,6 @@ fun SettingsScreen(
     val dynamicColors by preferences.dynamicColors.collectAsState(initial = true)
     val themeMode by preferences.themeMode.collectAsState(initial = "system")
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
-    val isChillModeEnabled by viewModel.isChillModeEnabled.collectAsState()
     val currentLanguage by viewModel.currentLanguage.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -190,7 +188,7 @@ fun SettingsScreen(
             SettingsSection(title = strings.personalizationSection) {
                 val hasMonet = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                 SettingsGroupItem(
-                    position = if (hasMonet) GroupPosition.TOP else GroupPosition.SINGLE
+                    position = GroupPosition.TOP
                 ) {
                     Column(
                         modifier = Modifier
@@ -268,18 +266,6 @@ fun SettingsScreen(
                             }
                         )
                     }
-                }
-
-                SettingsGroupItem(position = GroupPosition.MIDDLE) {
-                    SettingsSwitchRow(
-                        icon = Icons.Default.AutoAwesome,
-                        title = strings.gamificationTitle,
-                        subtitle = strings.gamificationSubtitle,
-                        checked = isChillModeEnabled,
-                        onCheckedChange = { enabled ->
-                            viewModel.toggleChillMode(enabled)
-                        }
-                    )
                 }
 
                 SettingsGroupItem(position = GroupPosition.BOTTOM) {

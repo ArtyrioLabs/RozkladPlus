@@ -38,14 +38,12 @@ class PreferencesManager @Inject constructor(
         private val SELECTED_FACULTY_ID_KEY = stringPreferencesKey("selected_faculty_id")
         private val SELECTED_COURSE_KEY = stringPreferencesKey("selected_course")
         private val NOTIFICATIONS_ENABLED_KEY = stringPreferencesKey("notifications_enabled")
+        private val NOTIFICATION_PERMISSION_PROMPTED_KEY = booleanPreferencesKey("notification_permission_prompted")
         private val LANGUAGE_KEY = stringPreferencesKey("language")
         private val DYNAMIC_COLORS_KEY = booleanPreferencesKey("dynamic_colors")
         private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
-        private val STUDENT_LEVEL_CHILL_MODE_KEY = booleanPreferencesKey("student_level_chill_mode")
         private val STUDENT_CARD_PHOTO_KEY = stringPreferencesKey("student_card_photo_path")
         private val STUDENT_CODE_TYPE_KEY = stringPreferencesKey("student_code_type")
-        private val STUDENT_TOTAL_XP_KEY = intPreferencesKey("student_total_xp")
-        private val STUDENT_MAX_COMPLETED_LESSONS_KEY = intPreferencesKey("student_max_completed_lessons")
     }
 
     val dynamicColors: Flow<Boolean> = context.dataStore.data.map { it[DYNAMIC_COLORS_KEY] ?: true }
@@ -257,13 +255,25 @@ class PreferencesManager @Inject constructor(
         }
     }
 
-    val isChillModeEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[STUDENT_LEVEL_CHILL_MODE_KEY] ?: false
+    suspend fun hasNotificationsSetting(): Boolean {
+        return try {
+            context.dataStore.data.first().contains(NOTIFICATIONS_ENABLED_KEY)
+        } catch (e: Exception) {
+            false
+        }
     }
 
-    suspend fun setChillModeEnabled(enabled: Boolean) {
+    suspend fun getNotificationPermissionPrompted(): Boolean {
+        return try {
+            context.dataStore.data.first()[NOTIFICATION_PERMISSION_PROMPTED_KEY] ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun setNotificationPermissionPrompted(prompted: Boolean) {
         context.dataStore.edit { preferences ->
-            preferences[STUDENT_LEVEL_CHILL_MODE_KEY] = enabled
+            preferences[NOTIFICATION_PERMISSION_PROMPTED_KEY] = prompted
         }
     }
 
@@ -285,21 +295,6 @@ class PreferencesManager @Inject constructor(
     suspend fun saveStudentCodeType(type: String) {
         context.dataStore.edit { preferences ->
             preferences[STUDENT_CODE_TYPE_KEY] = type
-        }
-    }
-
-    val totalStudentXp: Flow<Int> = context.dataStore.data.map { preferences ->
-        preferences[STUDENT_TOTAL_XP_KEY] ?: 0
-    }
-
-    val maxCompletedLessons: Flow<Int> = context.dataStore.data.map { preferences ->
-        preferences[STUDENT_MAX_COMPLETED_LESSONS_KEY] ?: 0
-    }
-
-    suspend fun saveStudentLevelProgress(totalXp: Int, maxCompletedLessons: Int) {
-        context.dataStore.edit { preferences ->
-            preferences[STUDENT_TOTAL_XP_KEY] = totalXp.coerceAtLeast(0)
-            preferences[STUDENT_MAX_COMPLETED_LESSONS_KEY] = maxCompletedLessons.coerceAtLeast(0)
         }
     }
 

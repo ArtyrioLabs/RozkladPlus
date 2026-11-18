@@ -22,9 +22,6 @@ class SettingsViewModel @Inject constructor(
     
     private val _currentLanguage = MutableStateFlow("uk")
     val currentLanguage: StateFlow<String> = _currentLanguage
-    
-    private val _isChillModeEnabled = MutableStateFlow(false)
-    val isChillModeEnabled: StateFlow<Boolean> = _isChillModeEnabled
 
     init {
         loadSettings()
@@ -41,13 +38,6 @@ class SettingsViewModel @Inject constructor(
                 LogCollector.log("SettingsViewModel", "Language: $language")
             }
         }
-        
-        viewModelScope.launch {
-            preferencesManager.isChillModeEnabled.collect { enabled ->
-                _isChillModeEnabled.value = enabled
-            }
-        }
-        
     }
 
     fun toggleNotifications(enabled: Boolean) {
@@ -55,14 +45,6 @@ class SettingsViewModel @Inject constructor(
             preferencesManager.setNotificationsEnabled(enabled)
             _notificationsEnabled.value = enabled
             LogCollector.log("SettingsViewModel", "Notifications toggled: $enabled")
-        }
-    }
-    
-    fun toggleChillMode(enabled: Boolean) {
-        viewModelScope.launch {
-            preferencesManager.setChillModeEnabled(enabled)
-            _isChillModeEnabled.value = enabled
-            LogCollector.log("SettingsViewModel", "Chill mode toggled: $enabled")
         }
     }
     

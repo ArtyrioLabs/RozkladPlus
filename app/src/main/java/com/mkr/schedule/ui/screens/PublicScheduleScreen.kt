@@ -75,6 +75,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mkr.schedule.NotificationNoticeType
 import com.mkr.schedule.data.local.PreferencesManager
 import com.mkr.schedule.data.model.*
 import com.mkr.schedule.ui.components.ScheduleGridView
@@ -97,12 +98,12 @@ import java.util.*
 
 @Composable
 fun PublicScheduleScreen(
-    viewModel: PublicScheduleViewModel
+    viewModel: PublicScheduleViewModel,
+    notificationNotice: NotificationNoticeType? = null,
+    onDismissNotificationNotice: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val isChillModeEnabled by viewModel.isChillModeEnabled.collectAsState()
     val context = LocalContext.current
-    val preferencesManager = remember { PreferencesManager(context.applicationContext) }
     val strings = LocalStrings.current
 
     var swipeOffset by remember { mutableStateOf(0f) }
@@ -117,6 +118,25 @@ fun PublicScheduleScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(notificationNotice) {
+        if (notificationNotice != null) {
+            val message = when (notificationNotice) {
+                NotificationNoticeType.ENABLED -> strings.notificationPermissionEnabledNotice
+                NotificationNoticeType.DENIED -> strings.notificationPermissionDeniedNotice
+            }
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = strings.openSettingsAction,
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                showSettings = true
+            }
+            onDismissNotificationNotice()
+        }
+    }
 
     val blockingLoading = uiState.isLoading &&
         uiState.structures.isEmpty() &&
@@ -132,8 +152,6 @@ fun PublicScheduleScreen(
         uiState.groups.isEmpty() &&
         uiState.students.isEmpty()
 
-    val persistedXp by preferencesManager.totalStudentXp.collectAsState(initial = 0)
-    val persistedMaxCompletedLessons by preferencesManager.maxCompletedLessons.collectAsState(initial = 0)
     var progressNow by remember { mutableStateOf(LocalDateTime.now()) }
 
     LaunchedEffect(Unit) {
@@ -141,10 +159,6 @@ fun PublicScheduleScreen(
             progressNow = LocalDateTime.now()
             delay(30_000)
         }
-    }
-
-    val liveProgressStats = remember(uiState.schedule, progressNow) {
-        calculateScheduleProgress(uiState.schedule, progressNow)
     }
 
     val todayIso = remember(progressNow) {
@@ -240,17 +254,6 @@ fun PublicScheduleScreen(
         }
     }
 
-    LaunchedEffect(liveProgressStats.completedLessons, persistedMaxCompletedLessons, persistedXp) {
-        if (liveProgressStats.completedLessons > persistedMaxCompletedLessons) {
-            val gainedLessons = liveProgressStats.completedLessons - persistedMaxCompletedLessons
-            val gainedXp = gainedLessons * XP_PER_COMPLETED_LESSON
-            preferencesManager.saveStudentLevelProgress(
-                totalXp = persistedXp + gainedXp,
-                maxCompletedLessons = liveProgressStats.completedLessons
-            )
-        }
-    }
-
     val showLoadMoreButton by remember {
         derivedStateOf {
             uiState.schedule.isNotEmpty() &&
@@ -330,7 +333,6 @@ fun PublicScheduleScreen(
             ) {
                 ProfileDrawerContent(
                     uiState = uiState,
-                    isChillModeEnabled = isChillModeEnabled,
                     isGridView = isGridView,
                     onToggleGridView = {
                         isGridView = !isGridView
@@ -345,14 +347,13 @@ fun PublicScheduleScreen(
                         showResetConfirmation = true
                     },
                     callSchedule = uiState.callSchedule,
-                    isLoadingCallSchedule = uiState.isLoading && uiState.callSchedule.isEmpty(),
-                    totalXp = persistedXp,
-                    maxCompletedLessons = persistedMaxCompletedLessons
+                    isLoadingCallSchedule = uiState.isLoading && uiState.callSchedule.isEmpty()
                 )
             }
         }
     ) {
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 TopAppBar(
@@ -972,15 +973,12 @@ fun PublicScheduleScreen(
 @Composable
 private fun ProfileDrawerContent(
     uiState: PublicScheduleUiState,
-    isChillModeEnabled: Boolean,
     isGridView: Boolean,
     onToggleGridView: () -> Unit,
     onOpenSettings: () -> Unit,
     onChangeSchedule: () -> Unit,
     callSchedule: List<CallSchedule>,
-    isLoadingCallSchedule: Boolean,
-    totalXp: Int,
-    maxCompletedLessons: Int
+    isLoadingCallSchedule: Boolean
 ) {
     val strings = LocalStrings.current
     var now by remember { mutableStateOf(LocalDateTime.now()) }
@@ -1548,66 +1546,6 @@ private fun groupedListShape(index: Int, count: Int): Shape {
     }
 }
 
-private data class ScheduleProgressStats(
-    val totalLessons: Int,
-    val completedLessons: Int,
-    val ongoingLessons: Int,
-    val remainingLessons: Int,
-    val progress: Float
-)
-
-private fun calculateScheduleProgress(
-    schedule: List<TimeTableDate>,
-    now: LocalDateTime
-): ScheduleProgressStats {
-    val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-    var totalLessons = 0
-    var completedLessons = 0
-    var ongoingLessons = 0
-    var remainingLessons = 0
-
-    val today = now.toLocalDate()
-
-    schedule.forEach { day ->
-        val lessonDate = runCatching {
-            LocalDate.parse(day.date.take(10), DateTimeFormatter.ISO_LOCAL_DATE)
-        }.getOrNull() ?: return@forEach
-
-        if (lessonDate != today) return@forEach
-
-        day.lessons.forEach { lesson ->
-            lesson.periods.forEach { period ->
-                val start = period.timeStart?.take(5) ?: return@forEach
-                val startTime = runCatching { LocalTime.parse(start, timeFormatter) }.getOrNull() ?: return@forEach
-                val endTime = runCatching {
-                    period.timeEnd?.take(5)?.let { LocalTime.parse(it, timeFormatter) } ?: startTime.plusMinutes(80)
-                }.getOrDefault(startTime.plusMinutes(80))
-
-                val startDateTime = LocalDateTime.of(lessonDate, startTime)
-                val endDateTime = LocalDateTime.of(lessonDate, endTime)
-                totalLessons += 1
-
-                when {
-                    now.isAfter(endDateTime) || now.isEqual(endDateTime) -> completedLessons += 1
-                    now.isBefore(startDateTime) -> remainingLessons += 1
-                    else -> ongoingLessons += 1
-                }
-            }
-        }
-    }
-
-    val completedEquivalent = completedLessons + (ongoingLessons * 0.5f)
-    val progress = if (totalLessons > 0) (completedEquivalent / totalLessons).coerceIn(0f, 1f) else 0f
-
-    return ScheduleProgressStats(
-        totalLessons = totalLessons,
-        completedLessons = completedLessons,
-        ongoingLessons = ongoingLessons,
-        remainingLessons = remainingLessons,
-        progress = progress
-    )
-}
-
 private fun selectionStageTitle(raw: String): String {
     val normalized = raw
         .removePrefix("Оберіть ")
@@ -1626,26 +1564,6 @@ private fun selectionStageTitle(raw: String): String {
             if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
         }
     }
-}
-
-private const val XP_PER_COMPLETED_LESSON = 120
-private const val XP_PER_LEVEL = 1_000
-
-private data class LevelProgress(
-    val level: Int,
-    val xpIntoCurrentLevel: Int,
-    val progressToNextLevel: Float
-)
-
-private fun calculateLevelProgress(totalXp: Int): LevelProgress {
-    val normalizedXp = totalXp.coerceAtLeast(0)
-    val level = (normalizedXp / XP_PER_LEVEL) + 1
-    val xpIntoCurrentLevel = normalizedXp % XP_PER_LEVEL
-    return LevelProgress(
-        level = level,
-        xpIntoCurrentLevel = xpIntoCurrentLevel,
-        progressToNextLevel = xpIntoCurrentLevel.toFloat() / XP_PER_LEVEL.toFloat()
-    )
 }
 
 @Composable
