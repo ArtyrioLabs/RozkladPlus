@@ -681,9 +681,12 @@
         </div>
 
         <div class="release-meta">
-          <span><span class="material-symbols-rounded" style="font-size:16px">new_releases</span> Версія: <strong id="versionTag">v1.9.1</strong></span>
+          <span><span class="material-symbols-rounded" style="font-size:16px">new_releases</span> Версія: <strong id="versionTag">v1.9.2</strong></span>
           <span><span class="material-symbols-rounded" style="font-size:16px">sd_storage</span> Розмір: <strong id="apkSize">~18 МБ</strong></span>
-          <span><span class="material-symbols-rounded" style="font-size:16px">verified_user</span> Без логіну та реклами</span>
+          <a id="vtLink" href="https://www.virustotal.com/gui/file/339e0aa07311f125466fe6974e82e44fb541f464488928adbacc4f377c80d70d" target="_blank" rel="noopener" style="color:var(--md-primary);text-decoration:none;display:inline-flex;align-items:center;gap:5px;font-weight:600">
+            <span class="material-symbols-rounded" style="font-size:16px">verified_user</span>
+            <span>VirusTotal: 0/66</span>
+          </a>
         </div>
       </div>
 
@@ -883,6 +886,11 @@
           document.getElementById('downloadLabel').textContent = `Завантажити ${tag} (APK)`;
           const mb = (apkAsset.size / (1024 * 1024)).toFixed(1);
           document.getElementById('apkSize').textContent = `${mb} МБ`;
+        }
+
+        const vtMatch = (data.body || '').match(/<!--\s*vt:\s*(https:\/\/www\.virustotal\.com\/[^\s>]+)\s*-->/);
+        if (vtMatch && vtMatch[1]) {
+          document.getElementById('vtLink').href = vtMatch[1];
         }
 
         const cleanBody = (data.body || '')
