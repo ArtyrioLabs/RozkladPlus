@@ -66,10 +66,13 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -190,6 +193,56 @@ fun PublicScheduleScreen(
     }
 
     val currentWeekStart = availableWeeks.getOrNull(selectedWeekIndex)
+    val haptic = LocalHapticFeedback.current
+    var weekTransitionDirection by remember { mutableStateOf(0) }
+    val weekSlideOffset = remember { Animatable(0f) }
+    val weekContentAlpha = remember { Animatable(1f) }
+
+    LaunchedEffect(selectedWeekIndex) {
+        val dir = weekTransitionDirection
+        if (dir != 0) {
+            weekSlideOffset.snapTo(dir * 72f)
+            weekContentAlpha.snapTo(0.65f)
+            launch {
+                weekSlideOffset.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(
+                        dampingRatio = 0.84f,
+                        stiffness = 460f
+                    )
+                )
+            }
+            launch {
+                weekContentAlpha.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 180)
+                )
+            }
+            weekTransitionDirection = 0
+        }
+    }
+
+    val goToPrevWeek: () -> Unit = {
+        if (selectedWeekIndex > 0) {
+            weekTransitionDirection = -1
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            selectedWeekIndex -= 1
+        }
+    }
+    val goToNextWeek: () -> Unit = {
+        if (selectedWeekIndex < availableWeeks.lastIndex) {
+            weekTransitionDirection = 1
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            selectedWeekIndex += 1
+        } else if (!uiState.isLoading) {
+            weekTransitionDirection = 1
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            pendingAdvanceToNextWeek = true
+            viewModel.loadNextWeek()
+        }
+    }
+    val currentGoToPrevWeek by rememberUpdatedState(goToPrevWeek)
+    val currentGoToNextWeek by rememberUpdatedState(goToNextWeek)
 
     val assessmentCount = remember(uiState.schedule, strings) {
         uiState.schedule.sumOf { day ->
@@ -514,11 +567,42 @@ fun PublicScheduleScreen(
                 }
 
                 if (!blockingError && !blockingLoading) {
+                    val canSwipeWeeks = isShowingSchedule && !showExamsOnly && !isGridView && currentWeekStart != null
                     LazyColumn(
                         state = listState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(padding),
+                            .padding(padding)
+                            .then(
+                                if (canSwipeWeeks) {
+                                    Modifier.pointerInput(Unit) {
+                                        var dragStartX = 0f
+                                        var totalDragX = 0f
+                                        detectHorizontalDragGestures(
+                                            onDragStart = { offset ->
+                                                dragStartX = offset.x
+                                                totalDragX = 0f
+                                            },
+                                            onDragEnd = {
+                                                val thresholdPx = 72.dp.toPx()
+                                                if (totalDragX <= -thresholdPx) {
+                                                    currentGoToNextWeek()
+                                                } else if (totalDragX >= thresholdPx && dragStartX >= 64.dp.toPx()) {
+                                                    currentGoToPrevWeek()
+                                                }
+                                                totalDragX = 0f
+                                            },
+                                            onDragCancel = {
+                                                totalDragX = 0f
+                                            }
+                                        ) { _, dragAmount ->
+                                            totalDragX += dragAmount
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            ),
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             end = 16.dp,
@@ -789,27 +873,59 @@ fun PublicScheduleScreen(
                                                 canGoPrev = selectedWeekIndex > 0,
                                                 isLoadingNext = uiState.isLoading && pendingAdvanceToNextWeek,
                                                 isCurrentWeek = selectedWeekIndex == todayWeekIndex,
-                                                onPrevWeek = {
-                                                    if (selectedWeekIndex > 0) {
-                                                        selectedWeekIndex -= 1
-                                                    }
-                                                },
-                                                onNextWeek = {
-                                                    if (selectedWeekIndex < availableWeeks.lastIndex) {
-                                                        selectedWeekIndex += 1
-                                                    } else if (!uiState.isLoading) {
-                                                        pendingAdvanceToNextWeek = true
-                                                        viewModel.loadNextWeek()
-                                                    }
-                                                },
+                                                onPrevWeek = goToPrevWeek,
+                                                onNextWeek = goToNextWeek,
                                                 onJumpToday = {
                                                     if (todayWeekIndex >= 0) {
+                                                        weekTransitionDirection = if (todayWeekIndex < selectedWeekIndex) -1 else 1
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                         selectedWeekIndex = todayWeekIndex
                                                     }
                                                     coroutineScope.launch {
                                                         listState.animateScrollToItem(1)
                                                     }
                                                 }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (!showExamsOnly && todayWeekIndex >= 0 && selectedWeekIndex != todayWeekIndex) {
+                                    item(key = "jump_today_chip") {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            AssistChip(
+                                                onClick = {
+                                                    weekTransitionDirection = if (todayWeekIndex < selectedWeekIndex) -1 else 1
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    selectedWeekIndex = todayWeekIndex
+                                                    coroutineScope.launch {
+                                                        listState.animateScrollToItem(1)
+                                                    }
+                                                },
+                                                shape = CircleShape,
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CalendarToday,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                },
+                                                label = {
+                                                    Text(
+                                                        text = if (strings.today == "Today") "Back to Today" else "На сьогодні",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                },
+                                                colors = AssistChipDefaults.assistChipColors(
+                                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                                ),
+                                                border = null
                                             )
                                         }
                                     }
@@ -839,11 +955,18 @@ fun PublicScheduleScreen(
                                         items = displayedSchedule,
                                         key = { day -> day.date.take(10) }
                                     ) { daySchedule ->
-                                        ModernDayScheduleCard(
-                                            daySchedule = daySchedule,
-                                            groupId = uiState.selectedGroup?.id ?: 0,
-                                            viewModel = viewModel
-                                        )
+                                        Box(
+                                            modifier = Modifier.graphicsLayer {
+                                                translationX = weekSlideOffset.value
+                                                alpha = weekContentAlpha.value
+                                            }
+                                        ) {
+                                            ModernDayScheduleCard(
+                                                daySchedule = daySchedule,
+                                                groupId = uiState.selectedGroup?.id ?: 0,
+                                                viewModel = viewModel
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -992,9 +1115,18 @@ private fun ProfileDrawerContent(
     }
 
     val todayIso = remember(now) { now.toLocalDate().toString() }
-    val todayPairsCount = remember(uiState.schedule, todayIso) {
+    val todayDaySchedule = remember(uiState.schedule, todayIso) {
         uiState.schedule.firstOrNull { it.date.take(10) == todayIso }
-            ?.lessons?.sumOf { it.periods.size } ?: 0
+    }
+    val todayLessonNumbers = remember(todayDaySchedule) {
+        todayDaySchedule?.lessons
+            ?.filter { it.periods.isNotEmpty() }
+            ?.map { it.number }
+            ?.toSet()
+            .orEmpty()
+    }
+    val todayPairsCount = remember(todayDaySchedule) {
+        todayDaySchedule?.lessons?.sumOf { it.periods.size } ?: 0
     }
     val upcomingExamsCount = remember(uiState.schedule, strings) {
         uiState.schedule.sumOf { day ->
@@ -1018,9 +1150,10 @@ private fun ProfileDrawerContent(
     val currentTimeStr = remember(now) {
         String.format(Locale.getDefault(), "%02d:%02d", now.hour, now.minute)
     }
-    val activeCallNumber = remember(callSchedule, currentTimeStr) {
+    val activeCallNumber = remember(callSchedule, currentTimeStr, todayLessonNumbers) {
         callSchedule.firstOrNull { call ->
-            currentTimeStr in call.timeStart.take(5)..call.timeEnd.take(5)
+            call.number in todayLessonNumbers &&
+                currentTimeStr in call.timeStart.take(5)..call.timeEnd.take(5)
         }?.number
     }
 
@@ -1069,7 +1202,11 @@ private fun ProfileDrawerContent(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = profileTitle,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = if (uiState.selectedStudent != null) {
+                                    MaterialTheme.typography.titleMedium
+                                } else {
+                                    MaterialTheme.typography.titleLarge
+                                },
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 2,
@@ -1230,16 +1367,19 @@ private fun ProfileDrawerContent(
                     callSchedule.forEachIndexed { index, call ->
                         val startClean = call.timeStart.take(5)
                         val endClean = call.timeEnd.take(5)
-                        val isCurrentBell = currentTimeStr in startClean..endClean
+                        val hasLessonToday = call.number in todayLessonNumbers
+                        val isCurrentBell = hasLessonToday && currentTimeStr in startClean..endClean
+                        val isDimmed = uiState.schedule.isNotEmpty() && !hasLessonToday
+                        val contentAlpha = if (isDimmed) 0.42f else 1f
                         val shape = groupedListShape(index, callSchedule.size)
 
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = shape,
-                            color = if (isCurrentBell) {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            color = when {
+                                isCurrentBell -> MaterialTheme.colorScheme.surfaceContainerHighest
+                                hasLessonToday -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                else -> MaterialTheme.colorScheme.surfaceContainerLow
                             },
                             border = if (isCurrentBell) {
                                 BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
@@ -1258,10 +1398,10 @@ private fun ProfileDrawerContent(
                                 ) {
                                     Surface(
                                         shape = RoundedCornerShape(9.dp),
-                                        color = if (isCurrentBell) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceContainerHighest
+                                        color = when {
+                                            isCurrentBell -> MaterialTheme.colorScheme.primary
+                                            hasLessonToday -> MaterialTheme.colorScheme.secondaryContainer
+                                            else -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
                                         },
                                         modifier = Modifier.size(24.dp)
                                     ) {
@@ -1270,10 +1410,10 @@ private fun ProfileDrawerContent(
                                                 text = "${call.number}",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (isCurrentBell) {
-                                                    MaterialTheme.colorScheme.onPrimary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                color = when {
+                                                    isCurrentBell -> MaterialTheme.colorScheme.onPrimary
+                                                    hasLessonToday -> MaterialTheme.colorScheme.onSecondaryContainer
+                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
                                                 }
                                             )
                                         }
@@ -1281,19 +1421,22 @@ private fun ProfileDrawerContent(
                                     Text(
                                         text = strings.formatOrdinalClass(call.number),
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = if (isCurrentBell) FontWeight.Bold else FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        fontWeight = when {
+                                            isCurrentBell -> FontWeight.Bold
+                                            hasLessonToday -> FontWeight.SemiBold
+                                            else -> FontWeight.Medium
+                                        },
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                                     )
                                 }
 
                                 Text(
                                     text = "$startClean – $endClean",
                                     style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = if (isCurrentBell) FontWeight.Bold else FontWeight.SemiBold,
-                                    color = if (isCurrentBell) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
+                                    fontWeight = if (isCurrentBell || hasLessonToday) FontWeight.Bold else FontWeight.Medium,
+                                    color = when {
+                                        isCurrentBell -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                                     }
                                 )
                             }

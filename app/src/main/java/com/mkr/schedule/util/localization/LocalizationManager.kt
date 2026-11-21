@@ -287,9 +287,9 @@ object UkrainianStrings : Strings {
 
     // Drawer
     override val quickActions = "Швидкі дії"
-    override val viewWeekGrid = "Вигляд: Таблиця тижня"
-    override val viewDayList = "Вигляд: Список днів"
-    override val changeGroupOrUniversity = "Змінити групу або ЗВО"
+    override val viewWeekGrid = "Таблиця тижня"
+    override val viewDayList = "Список по днях"
+    override val changeGroupOrUniversity = "Змінити групу або студента"
     override val groupPrefix = "Група"
     override val noProfileSelected = "Профіль не вибрано"
     override val bellScheduleUnavailable = "Розклад дзвінків для обраного ЗВО недоступний"
@@ -487,9 +487,9 @@ object EnglishStrings : Strings {
 
     // Drawer
     override val quickActions = "Quick Actions"
-    override val viewWeekGrid = "View: Week Table"
-    override val viewDayList = "View: Day List"
-    override val changeGroupOrUniversity = "Change Group or University"
+    override val viewWeekGrid = "Week Table"
+    override val viewDayList = "Day List"
+    override val changeGroupOrUniversity = "Change Group or Student"
     override val groupPrefix = "Group"
     override val noProfileSelected = "No profile selected"
     override val bellScheduleUnavailable = "Bell schedule for this institution is unavailable"

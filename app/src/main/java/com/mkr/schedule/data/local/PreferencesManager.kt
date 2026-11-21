@@ -33,7 +33,9 @@ class PreferencesManager @Inject constructor(
         private val CREDENTIALS_REVISION_KEY = longPreferencesKey("credentials_revision")
         private val SELECTED_UNIVERSITY_ID_KEY = stringPreferencesKey("selected_university_id")
         private val SELECTED_STUDENT_ID_KEY = stringPreferencesKey("selected_student_id")
+        private val SELECTED_STUDENT_NAME_KEY = stringPreferencesKey("selected_student_name")
         private val SELECTED_GROUP_ID_KEY = stringPreferencesKey("selected_group_id")
+        private val SELECTED_GROUP_NAME_KEY = stringPreferencesKey("selected_group_name")
         private val SELECTED_STRUCTURE_ID_KEY = stringPreferencesKey("selected_structure_id")
         private val SELECTED_FACULTY_ID_KEY = stringPreferencesKey("selected_faculty_id")
         private val SELECTED_COURSE_KEY = stringPreferencesKey("selected_course")
@@ -163,22 +165,30 @@ class PreferencesManager @Inject constructor(
         }
     }
 
-    suspend fun saveSelectedStudent(studentId: Int) {
+    suspend fun saveSelectedStudent(studentId: Int, studentName: String? = null) {
         context.dataStore.edit { preferences ->
             if (studentId <= 0) {
                 preferences.remove(SELECTED_STUDENT_ID_KEY)
+                preferences.remove(SELECTED_STUDENT_NAME_KEY)
             } else {
                 preferences[SELECTED_STUDENT_ID_KEY] = studentId.toString()
+                if (!studentName.isNullOrBlank()) {
+                    preferences[SELECTED_STUDENT_NAME_KEY] = studentName
+                }
             }
         }
     }
 
-    suspend fun saveSelectedGroup(groupId: Int) {
+    suspend fun saveSelectedGroup(groupId: Int, groupName: String? = null) {
         context.dataStore.edit { preferences ->
             if (groupId <= 0) {
                 preferences.remove(SELECTED_GROUP_ID_KEY)
+                preferences.remove(SELECTED_GROUP_NAME_KEY)
             } else {
                 preferences[SELECTED_GROUP_ID_KEY] = groupId.toString()
+                if (!groupName.isNullOrBlank()) {
+                    preferences[SELECTED_GROUP_NAME_KEY] = groupName
+                }
             }
         }
     }
@@ -191,8 +201,16 @@ class PreferencesManager @Inject constructor(
         preferences[SELECTED_STUDENT_ID_KEY]?.takeIf { it.isNotBlank() && it != "0" }
     }
 
+    val selectedStudentName: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[SELECTED_STUDENT_NAME_KEY]?.takeIf { it.isNotBlank() }
+    }
+
     val selectedGroupId: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[SELECTED_GROUP_ID_KEY]?.takeIf { it.isNotBlank() && it != "0" }
+    }
+
+    val selectedGroupName: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[SELECTED_GROUP_NAME_KEY]?.takeIf { it.isNotBlank() }
     }
 
     suspend fun saveSelectedStructure(structureId: Int) {

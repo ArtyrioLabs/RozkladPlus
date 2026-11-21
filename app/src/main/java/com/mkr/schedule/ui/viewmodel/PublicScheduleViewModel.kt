@@ -297,9 +297,17 @@ class PublicScheduleViewModel @Inject constructor(
             val cached = getScheduleFromCache()
             if (cached != null && cached.isNotEmpty()) {
                 val savedGroupId = preferencesManager.selectedGroupId.first()?.toIntOrNull() ?: 0
+                val savedGroupName = preferencesManager.selectedGroupName.first()
+                val savedStudentId = preferencesManager.selectedStudentId.first()?.toIntOrNull() ?: 0
+                val savedStudentName = preferencesManager.selectedStudentName.first()
+                val restoredStudent = if (savedStudentId > 0 && !savedStudentName.isNullOrBlank()) {
+                    Student(id = savedStudentId, firstName = null, secondName = null, lastName = savedStudentName)
+                } else null
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    selectedGroup = if (savedGroupId > 0) Group(id = savedGroupId, name = "Збережений розклад", course = 1, priority = 0, educationForm = 1) else null,
+                    selectedGroup = if (savedGroupId > 0) Group(id = savedGroupId, name = savedGroupName ?: "Збережений розклад", course = 1, priority = 0, educationForm = 1) else null,
+                    selectedStudent = restoredStudent,
+                    scheduleType = if (restoredStudent != null) ScheduleType.STUDENT else ScheduleType.GROUP,
                     schedule = filterAndSortSchedule(cached),
                     error = "Офлайн режим • дані з локального кешу"
                 )
@@ -501,7 +509,7 @@ class PublicScheduleViewModel @Inject constructor(
 
     fun selectGroup(group: Group) {
         viewModelScope.launch {
-            preferencesManager.saveSelectedGroup(group.id)
+            preferencesManager.saveSelectedGroup(group.id, group.name)
             preferencesManager.saveSelectedStudent(0)
         }
         _uiState.value = _uiState.value.copy(
@@ -583,6 +591,7 @@ class PublicScheduleViewModel @Inject constructor(
 
                                                 val group = groups.find { it.id == groupId }
                                                 group?.let {
+                                                    preferencesManager.saveSelectedGroup(it.id, it.name)
                                                     _uiState.value = _uiState.value.copy(selectedGroup = it)
 
                                                     val studentsResponse = currentApiService.getStudentsByGroup("", StudentsByGroupFilterForm(groupId))
@@ -591,8 +600,9 @@ class PublicScheduleViewModel @Inject constructor(
                                                         _uiState.value = _uiState.value.copy(students = students)
 
                                                         if (studentId != null && studentId > 0) {
-                                                            val student = students.find { it.id == studentId }
+                                                            val student = students.find { s -> s.id == studentId }
                                                             if (student != null) {
+                                                                preferencesManager.saveSelectedStudent(student.id, student.fullName)
                                                                 _uiState.value = _uiState.value.copy(
                                                                     selectedStudent = student,
                                                                     scheduleType = ScheduleType.STUDENT
@@ -602,7 +612,19 @@ class PublicScheduleViewModel @Inject constructor(
                                                             }
                                                         }
                                                     }
-                                                    // If no student saved or group has no students, load group schedule
+                                                    if (studentId != null && studentId > 0) {
+                                                        val savedStudentName = preferencesManager.selectedStudentName.first()
+                                                        val fallbackStudent = if (!savedStudentName.isNullOrBlank()) {
+                                                            Student(id = studentId, firstName = null, secondName = null, lastName = savedStudentName)
+                                                        } else null
+                                                        _uiState.value = _uiState.value.copy(
+                                                            selectedStudent = fallbackStudent,
+                                                            scheduleType = ScheduleType.STUDENT
+                                                        )
+                                                        loadStudentSchedule(studentId)
+                                                        return
+                                                    }
+                                                    // If no student saved, load group schedule
                                                     _uiState.value = _uiState.value.copy(scheduleType = ScheduleType.GROUP)
                                                     loadGroupSchedule(groupId)
                                                     return
@@ -617,13 +639,21 @@ class PublicScheduleViewModel @Inject constructor(
                 }
             }
             // Fallback direct load if intermediate hierarchy changed
+            val savedGroupName = preferencesManager.selectedGroupName.first()
+            val savedStudentName = preferencesManager.selectedStudentName.first()
             if (_uiState.value.selectedGroup == null && groupId > 0) {
                 _uiState.value = _uiState.value.copy(
-                    selectedGroup = Group(id = groupId, name = "Розклад", course = 1, priority = 0, educationForm = 1)
+                    selectedGroup = Group(id = groupId, name = savedGroupName ?: "Розклад", course = 1, priority = 0, educationForm = 1)
                 )
             }
             if (studentId != null && studentId > 0) {
-                _uiState.value = _uiState.value.copy(scheduleType = ScheduleType.STUDENT)
+                val fallbackStudent = _uiState.value.selectedStudent ?: if (!savedStudentName.isNullOrBlank()) {
+                    Student(id = studentId, firstName = null, secondName = null, lastName = savedStudentName)
+                } else null
+                _uiState.value = _uiState.value.copy(
+                    selectedStudent = fallbackStudent,
+                    scheduleType = ScheduleType.STUDENT
+                )
                 loadStudentSchedule(studentId)
             } else if (groupId > 0) {
                 _uiState.value = _uiState.value.copy(scheduleType = ScheduleType.GROUP)
@@ -631,12 +661,21 @@ class PublicScheduleViewModel @Inject constructor(
             }
         } catch (e: Exception) {
             try {
+                val savedGroupName = preferencesManager.selectedGroupName.first()
+                val savedStudentName = preferencesManager.selectedStudentName.first()
                 if (_uiState.value.selectedGroup == null && groupId > 0) {
                     _uiState.value = _uiState.value.copy(
-                        selectedGroup = Group(id = groupId, name = "Розклад", course = 1, priority = 0, educationForm = 1)
+                        selectedGroup = Group(id = groupId, name = savedGroupName ?: "Розклад", course = 1, priority = 0, educationForm = 1)
                     )
                 }
                 if (studentId != null && studentId > 0) {
+                    val fallbackStudent = _uiState.value.selectedStudent ?: if (!savedStudentName.isNullOrBlank()) {
+                        Student(id = studentId, firstName = null, secondName = null, lastName = savedStudentName)
+                    } else null
+                    _uiState.value = _uiState.value.copy(
+                        selectedStudent = fallbackStudent,
+                        scheduleType = ScheduleType.STUDENT
+                    )
                     loadStudentSchedule(studentId)
                 } else if (groupId > 0) {
                     loadGroupSchedule(groupId)
@@ -667,18 +706,29 @@ class PublicScheduleViewModel @Inject constructor(
     }
 
     fun selectStudent(student: Student) {
+        viewModelScope.launch {
+            preferencesManager.saveSelectedStudent(student.id, student.fullName)
+            preferencesManager.saveSelectedGroup(
+                _uiState.value.selectedGroup?.id ?: 0,
+                _uiState.value.selectedGroup?.name
+            )
+        }
         _uiState.value = _uiState.value.copy(
             selectedStudent = student,
             scheduleType = ScheduleType.STUDENT,
-            showSaveStudentDialog = true
+            showSaveStudentDialog = false
         )
+        loadStudentSchedule(student.id)
     }
 
     fun confirmSaveStudent(student: Student) {
         LogCollector.log("PublicScheduleVM", "confirmSaveStudent: ${student.id} - ${student.shortName}")
         viewModelScope.launch {
-            preferencesManager.saveSelectedStudent(student.id)
-            preferencesManager.saveSelectedGroup(_uiState.value.selectedGroup?.id ?: 0)
+            preferencesManager.saveSelectedStudent(student.id, student.fullName)
+            preferencesManager.saveSelectedGroup(
+                _uiState.value.selectedGroup?.id ?: 0,
+                _uiState.value.selectedGroup?.name
+            )
             _uiState.value = _uiState.value.copy(showSaveStudentDialog = false)
             loadStudentSchedule(student.id)
         }
